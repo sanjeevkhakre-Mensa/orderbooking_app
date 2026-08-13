@@ -367,6 +367,22 @@
   .qty-note{ font-size:11px; margin-top:2px; }
   .qty-note.ok{ color:var(--green-text); }
   .qty-note.warn{ color:var(--red-text); }
+
+  /* ---------------- Live Inventory Check (inside the add-to-order panel) ----------------
+     Shown right under the qty stepper so a rep sees availability before they
+     even get to pricing — deliberately part of the SAME panel (not a
+     separate step/modal) since the whole point is "know before you commit
+     to a quantity", not an extra click away. */
+  .inv-check{
+    border-radius:8px; padding:8px 10px; margin:8px 0; font-size:11.5px;
+  }
+  .inv-check.ok{ background:var(--green-bg); color:var(--green-text); }
+  .inv-check.warn{ background:var(--amber-bg); color:var(--amber-text); }
+  .inv-check.bad{ background:var(--red-bg); color:var(--red-text); }
+  .inv-check.unknown{ background:var(--gray-bg); color:var(--gray-text); }
+  .inv-check .inv-row{ display:flex; justify-content:space-between; padding:1px 0; }
+  .inv-check .inv-status{ font-weight:800; text-transform:uppercase; letter-spacing:.2px; margin-top:3px; }
+  .inv-check .inv-suggestion{ margin-top:4px; font-weight:600; }
   .ap-preview{ font-size:12.5px; color:var(--ink); margin:6px 0 10px; }
   .ap-preview b{ font-weight:800; }
   .ap-actions{ display:flex; gap:8px; }
@@ -812,8 +828,17 @@ const INVENTORY_DATE = "07-Aug-2026";
 const MASTER_DATA_URLS = {
   customers: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=226489656",           // Customer Master tab
   productsGT: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=639235062",          // Product Master — General Trade tab
-  productsSupplement: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=1572320868"   // Product Master — Supplement tab
+  productsSupplement: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=1572320868", // Product Master — Supplement tab
+  inventory: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSbcivxAWc9ayoY9dqeju74ZpVuYIJuSAifnt0XPPkTpVVhl9pjzwLJb-rbK6nO6iFkrVRfVhR4wHD/pub?gid=212855391&single=true&output=csv" // Live Inventory — published CSV link the user provided directly.
 };
+
+// Live Inventory Check: how stale a sync can be before the app stops
+// trusting it and hides the Available/Requested/Status block rather than
+// show a number that might be many hours out of date. The daily email/
+// script sync is expected once per morning, so a generous window (this
+// many hours) still easily covers a normal business day while catching
+// the case where the daily sync silently stopped running for a day or two.
+const INVENTORY_STALE_AFTER_HOURS = 30;
 
 // A manual tap on the "Refresh" button always re-fetches. Otherwise, once
 // all three tabs have synced successfully, the app won't hit the sheet
@@ -1032,6 +1057,25 @@ fillMarginOptions(els.marginNONPB, 0.25, 0.45, 38);
 // swapping these references is enough to make the whole app "live".
 let BUYERS = FALLBACK_BUYERS.slice();
 
+// Live Inventory Check — keyed by style code, independent of Sales Channel
+// (the same physical warehouse stock backs a style whether it's being sold
+// through the General Trade or Supplement catalog, so this is one flat
+// lookup shared by both, not part of PRODUCT_MASTERS). Populated by
+// loadMasterData() from the "Live Inventory" Google Sheet tab, which in
+// turn is refreshed every morning by an Apps Script reading the daily
+// inventory email — see LIVE_INVENTORY_SETUP_GUIDE.md. Empty object (no
+// data yet) is a valid, expected state until that tab/URL is configured;
+// the add-to-order panel simply hides the inventory check block in that
+// case rather than showing zeros.
+let LIVE_INVENTORY = {};
+// Timestamp (ms) the "Live Inventory" sheet itself claims to have last been
+// refreshed by the daily script — read from the sheet's own "Last Synced"
+// column, NOT from when this device happened to fetch the CSV. This is
+// what actually catches "the daily script stopped running two days ago";
+// relying only on fetch success would keep looking "synced" forever since
+// the sheet would still serve (stale) data successfully every time.
+let liveInventorySyncedAt = null;
+
 const PRODUCT_MASTERS = {
   'General Trade': {
     skus: FALLBACK_SKUS_GT,
@@ -1064,11 +1108,18 @@ const DEFAULT_CHANNEL = 'General Trade';
 //    arrays bundled in this file — the product/customer list is never
 //    left empty just because of a network hiccup.
 // ============================================================================
+// The tabs the app treats as required for "master data" purposes — used to
+// scope the top status bar's synced/stale/error messaging. "inventory" is
+// deliberately NOT in this list (see renderMasterDataStatus) since it's an
+// optional add-on tab, not part of the original three.
+const CORE_MASTER_TABS = ['customers', 'productsGT', 'productsSupplement'];
+
 const masterData = {
   status: {
     customers:          { source: 'fallback', updatedAt: null, error: null },
     productsGT:          { source: 'fallback', updatedAt: null, error: null },
-    productsSupplement:  { source: 'fallback', updatedAt: null, error: null }
+    productsSupplement:  { source: 'fallback', updatedAt: null, error: null },
+    inventory:           { source: 'fallback', updatedAt: null, error: null }
   }
 };
 
@@ -1167,6 +1218,28 @@ function rowsToProductsSupplement(rows){
   }).filter(Boolean);
 }
 
+// Live Inventory tab — one row per style code, refreshed daily by the Apps
+// Script reading the morning inventory email (see
+// LIVE_INVENTORY_SETUP_GUIDE.md). Deliberately a flat lookup by style code
+// only, no Sales Channel involved — the same physical stock backs a style
+// whichever catalog it's sold through. "TOTAL" (the source report's own
+// grand-total row) is dropped rather than treated as a real SKU. Each row
+// carries its own copy of "Last Synced" (the script writes the same
+// timestamp on every row) so the app can tell "sheet loaded fine" apart
+// from "sheet loaded fine but the daily script hasn't actually run
+// recently" — the two would otherwise look identical.
+function rowsToInventory(rows){
+  return rows.map(r=>{
+    const style = pickCol(r, ['Style Code','Style','SKU','style_id']);
+    if(!style || style.trim().toUpperCase()==='TOTAL') return null;
+    const bhiwandi = csvNum(pickCol(r, ['Bhiwandi Qty','Bhiwandi','b2b_mumbai','WMS Bhiwandi']), 0);
+    const ggn = csvNum(pickCol(r, ['GGN Qty','GGN','b2b_ggn','Gurgaon','WMS GGN']), 0);
+    const syncedRaw = pickCol(r, ['Last Synced','Last Updated','Synced At']);
+    const syncedMs = syncedRaw ? Date.parse(syncedRaw) : NaN;
+    return { style, bhiwandi, ggn, all: bhiwandi + ggn, syncedAt: isNaN(syncedMs) ? null : syncedMs };
+  }).filter(Boolean);
+}
+
 function masterCacheKey(tab){ return 'masterData_' + tab; }
 function saveMasterCache(tab, data){
   try{ localStorage.setItem(masterCacheKey(tab), JSON.stringify({ data, savedAt: Date.now() })); }
@@ -1192,6 +1265,13 @@ async function fetchCsv(url){
 // device that's already synced once shows real sheet data immediately
 // instead of flashing the bundled fallback while the network fetch is
 // still in flight (or when opened offline).
+function applyInventoryRows(rows){
+  const map = {};
+  rows.forEach(r => { map[r.style] = r; });
+  LIVE_INVENTORY = map;
+  liveInventorySyncedAt = (rows[0] && rows[0].syncedAt) || null;
+}
+
 function hydrateMasterDataFromCache(){
   const c = loadMasterCache('customers');
   if(c){ BUYERS = c.data; masterData.status.customers = { source:'cache', updatedAt:c.savedAt, error:null }; }
@@ -1199,6 +1279,8 @@ function hydrateMasterDataFromCache(){
   if(g){ PRODUCT_MASTERS['General Trade'].skus = g.data; masterData.status.productsGT = { source:'cache', updatedAt:g.savedAt, error:null }; }
   const s = loadMasterCache('productsSupplement');
   if(s){ PRODUCT_MASTERS['Supplement'].skus = s.data; masterData.status.productsSupplement = { source:'cache', updatedAt:s.savedAt, error:null }; }
+  const inv = loadMasterCache('inventory');
+  if(inv){ applyInventoryRows(inv.data); masterData.status.inventory = { source:'cache', updatedAt:inv.savedAt, error:null }; }
 }
 
 // Loads one configured tab and swaps its data in via applyFn. Falls back
@@ -1245,7 +1327,14 @@ async function loadMasterData(opts){
     loadOneTab('productsGT', MASTER_DATA_URLS.productsGT, rowsToProductsGT,
       data => { PRODUCT_MASTERS['General Trade'].skus = data; }, FALLBACK_SKUS_GT),
     loadOneTab('productsSupplement', MASTER_DATA_URLS.productsSupplement, rowsToProductsSupplement,
-      data => { PRODUCT_MASTERS['Supplement'].skus = data; }, FALLBACK_SKUS_SUPPLEMENT)
+      data => { PRODUCT_MASTERS['Supplement'].skus = data; }, FALLBACK_SKUS_SUPPLEMENT),
+    // Inventory is optional — an unconfigured/blank URL is a normal, expected
+    // state (not an error), and deliberately excluded from the CORE_MASTER_TABS
+    // used by the top status bar below so rollout of this feature doesn't
+    // make the bar claim "partially connected" for shops that haven't set up
+    // the Live Inventory tab yet.
+    loadOneTab('inventory', MASTER_DATA_URLS.inventory, rowsToInventory,
+      applyInventoryRows, [])
   ]);
   renderMasterDataStatus();
   // Re-render anything already on screen so newly-loaded prices/names/
@@ -1267,7 +1356,11 @@ function renderMasterDataStatus(overrideText){
     els.masterDataBar.className = 'masterdata-bar off';
     return;
   }
-  const statuses = Object.values(masterData.status);
+  // Scoped to the three tabs this app can't really function without.
+  // "inventory" is intentionally excluded — it's an optional bonus tab, and
+  // shops that haven't set it up yet shouldn't see the core sync status
+  // downgrade to "partially connected" because of it.
+  const statuses = CORE_MASTER_TABS.map(k => masterData.status[k]);
   const hasError = statuses.some(s => s.error && s.source === 'fallback');
   const hasStale = statuses.some(s => s.source === 'cache');
   const allSynced = statuses.every(s => s.source === 'sheet');
@@ -1605,6 +1698,7 @@ function openAddPanel(style){
       <button type="button" id="apPlus">+</button>
     </div>
     <div class="qty-note" id="apNote"></div>
+    <div class="inv-check unknown" id="apInvCheck" hidden></div>
     <div class="grid2" style="margin-top:8px;">
       <div class="field" style="margin-bottom:0;">
         <label>Unit Price (Excl. GST)</label>
@@ -1627,6 +1721,53 @@ function openAddPanel(style){
   const discountInput = document.getElementById('apDiscount');
   const note = document.getElementById('apNote');
   const preview = document.getElementById('apPreview');
+  const invBox = document.getElementById('apInvCheck');
+
+  // Live Inventory Check — advisory only (does not block Add to Order).
+  // Looks up LIVE_INVENTORY (keyed by style code, independent of Sales
+  // Channel since the same warehouse stock backs a SKU regardless of which
+  // catalog it's sold through) and compares against the selected Fulfilment
+  // Location from Step 2 and the quantity currently entered here.
+  function renderInvCheck(qty){
+    if(!invBox) return;
+    const hasInventoryData = Object.keys(LIVE_INVENTORY).length > 0;
+    if(!hasInventoryData){
+      invBox.hidden = true; invBox.innerHTML = '';
+      return;
+    }
+    invBox.hidden = false;
+    const inv = LIVE_INVENTORY[s.style];
+    if(!inv){
+      invBox.className = 'inv-check unknown';
+      invBox.innerHTML = `<div class="inv-row"><span>Live Inventory</span><span>No data for this SKU</span></div>`;
+      return;
+    }
+    const lk = locKey();
+    const scoped = lk==='bhiwandi' || lk==='ggn';
+    const available = lk==='bhiwandi' ? inv.bhiwandi : lk==='ggn' ? inv.ggn : inv.all;
+    const locSuffix = scoped ? ` (${locLabel()})` : '';
+
+    let cls, status, extra = '';
+    if(available<=0){
+      cls='bad'; status='Not Available';
+      extra = `<div class="inv-suggestion">⚠ Out of stock${locSuffix} — select another SKU${scoped? ' or check the other location':''}.</div>`;
+    } else if(qty>0 && qty>available){
+      cls='warn'; status='Partially Available';
+      extra = `<div class="inv-suggestion">⚠ Only ${available} available${locSuffix} — reduce the quantity to ${available} or fewer, or select another SKU.</div>`;
+    } else {
+      cls='ok'; status='Available';
+    }
+    const staleMs = liveInventorySyncedAt ? (Date.now() - liveInventorySyncedAt) : null;
+    const isStale = staleMs !== null && staleMs > INVENTORY_STALE_AFTER_HOURS*3600*1000;
+    invBox.className = 'inv-check ' + cls;
+    invBox.innerHTML = `
+      <div class="inv-row"><span>Available Inventory${locSuffix}</span><span>${available}</span></div>
+      <div class="inv-row"><span>Requested Quantity</span><span>${qty}</span></div>
+      <div class="inv-status">${status}</div>
+      ${extra}
+      ${isStale ? `<div class="inv-suggestion">⏱ Inventory last synced ${new Date(liveInventorySyncedAt).toLocaleString()} — may be out of date.</div>` : ''}
+    `;
+  }
 
   function refresh(){
     const qty = parseFloat(qtyInput.value) || 0;
@@ -1640,6 +1781,7 @@ function openAddPanel(style){
     } else {
       note.className='qty-note warn'; note.textContent = `Enter a quantity`;
     }
+    renderInvCheck(qty);
     preview.innerHTML = `Taxable <b>₹${r.taxableValue.toFixed(2)}</b> · GST <b>₹${r.gstAmount.toFixed(2)}</b> · Line Total <b>${fmtMoney(r.lineTotal)}</b>`;
   }
   refresh();
