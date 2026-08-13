@@ -1,0 +1,2774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#00AEEF">
+<meta name="description" content="MyFitness Pro.Fitness Order Booking App">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MyFitness Orders">
+<link rel="manifest" href="manifest.json">
+<!-- Real PNG icon files (see icon-192.png / icon-512.png in this folder) —
+     used instead of inline SVG data-URIs because several Android/iOS
+     install flows only reliably pick up actual image files here. The old
+     inline-SVG favicon still works as a fallback if these files are ever
+     missing, browsers just fall through to the next usable icon. -->
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>MyFitness | Pro.Fitness — Order Booking</title>
+<style>
+  :root{
+    --blue:#00AEEF;
+    --blue-dark:#0090c4;
+    --lime:#C9E71D;
+    --ink:#12384A;
+    --whatsapp:#25D366;
+    --whatsapp-dark:#1ea952;
+    --bg:#eef2f5;
+    --card:#ffffff;
+    --border:#e1e7ea;
+    --muted:#7c8a93;
+    --green-bg:#E6F6EA; --green-text:#1E7B00;
+    --red-bg:#FDECEC;   --red-text:#B3261E;
+    --amber-bg:#FFF4E0; --amber-text:#9C5700;
+    --gray-bg:#F0F2F3;  --gray-text:#6b7780;
+    --radius:12px;
+    --shadow:0 1px 2px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.08);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:#1a2733;
+    font-size:14.5px;
+    line-height:1.35;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .app{ max-width:640px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; background:var(--bg); }
+
+  /* ---------------- Top brand bar ---------------- */
+  .topbar{
+    background:linear-gradient(135deg,var(--blue),var(--blue-dark));
+    color:#fff;
+    padding:14px 16px 12px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .topbar-center{ flex:1; text-align:center; }
+  .topbar .brand{ font-weight:800; font-size:17px; letter-spacing:.3px; }
+  .topbar .brand .sep{ opacity:.6; margin:0 4px; font-weight:400; }
+  .topbar .subbrand{ font-size:11.5px; opacity:.9; margin-top:2px; }
+
+  /* Shared round topbar-icon look for both the Order History and Order
+     Summary shortcut buttons, so the two sit together without competing
+     for attention. */
+  .history-btn, .summary-btn{
+    width:40px; height:40px; border-radius:50%;
+    background:rgba(255,255,255,0.2); border:2px solid rgba(255,255,255,0.4);
+    color:#fff; cursor:pointer; display:flex; align-items:center;
+    justify-content:center; font-size:17px; transition:all .2s;
+    flex-shrink:0;
+  }
+  .history-btn:hover, .summary-btn:hover{ background:rgba(255,255,255,0.3); border-color:#fff; }
+  .history-btn{ margin-right:8px; }
+  .summary-btn{ margin-left:8px; }
+
+  /* ---------------- Order History overlay ----------------
+     A separate modal, not the wizard's own step navigation, on purpose:
+     the wizard already has "‹ Back" / "Next ›" buttons that move between
+     the 4 order-entry steps, so reusing that language for browsing PAST
+     orders would be confusing. Here the controls are always labelled
+     "Older / Newer" to keep the two concepts visually and verbally apart. */
+  .history-overlay{
+    position:fixed; inset:0; background:rgba(10,20,30,0.55);
+    display:flex; align-items:flex-end; justify-content:center;
+    z-index:80;
+  }
+  .history-overlay.hidden{ display:none; }
+  .history-sheet{
+    background:var(--bg,#f4f7f9); width:100%; max-width:520px;
+    max-height:88vh; border-radius:16px 16px 0 0; display:flex; flex-direction:column;
+    box-shadow:0 -6px 24px rgba(0,0,0,0.25);
+  }
+  .history-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 16px; border-bottom:1px solid var(--border); flex-shrink:0;
+  }
+  .history-head h3{ margin:0; font-size:14px; font-weight:800; color:var(--ink); }
+  .history-close{
+    width:32px; height:32px; border-radius:50%; border:1.5px solid var(--border);
+    background:#fff; font-size:15px; cursor:pointer; color:var(--ink);
+  }
+  .history-body{ overflow-y:auto; padding:12px 16px; flex:1; }
+  .history-empty{ text-align:center; color:var(--muted); font-size:12.5px; padding:30px 10px; }
+  .history-list-item{
+    border:1.5px solid var(--border); border-radius:10px; padding:10px 12px;
+    margin-bottom:8px; cursor:pointer; background:#fff;
+  }
+  .history-list-item:hover{ border-color:var(--blue); }
+  .history-list-item .hl-top{ display:flex; justify-content:space-between; font-weight:700; font-size:13px; color:var(--ink); }
+  .history-list-item .hl-bottom{ display:flex; justify-content:space-between; font-size:11.5px; color:var(--muted); margin-top:3px; }
+  /* Always the first thing rendered in the detail view's body — above the
+     "‹ Back to list" link and the Older/Newer pager — so Order Number is
+     the very first piece of information a rep sees, not something buried
+     below navigation controls. */
+  .history-order-heading{
+    font-size:15px; font-weight:800; color:var(--ink); margin-bottom:8px;
+  }
+  .history-pager{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    margin-bottom:10px;
+  }
+  .history-pager button{
+    border:1.5px solid var(--border); background:#fff; border-radius:8px;
+    padding:8px 14px; font-size:13px; font-weight:700; color:var(--ink); cursor:pointer;
+    min-height:40px;
+  }
+  .history-pager button:disabled{ opacity:.4; cursor:not-allowed; }
+  .history-pager .hp-count{ font-size:11.5px; color:var(--muted); font-weight:600; }
+  .history-detail{ border:1.5px solid var(--border); border-radius:10px; padding:12px; background:#fff; }
+  .history-detail .rr{ display:flex; justify-content:space-between; font-size:12.5px; padding:4px 0; border-bottom:1px dashed var(--border); }
+  .history-detail .rr:last-child{ border-bottom:none; }
+  .history-detail .hd-lines{ margin-top:10px; }
+  .history-detail .hd-line{
+    display:flex; justify-content:space-between; font-size:11.5px; color:#445;
+    padding:5px 0; border-bottom:1px dashed var(--border);
+  }
+  .history-back-link{
+    background:none; border:none; color:var(--blue); font-weight:700; font-size:12.5px;
+    cursor:pointer; padding:6px 0; margin-bottom:8px;
+  }
+  .history-edit-link{
+    background:none; border:1.5px solid var(--blue); color:var(--blue); font-weight:700;
+    font-size:12.5px; cursor:pointer; padding:8px 10px; border-radius:8px; width:100%;
+    margin-top:10px;
+  }
+  .history-edit-link:hover{ background:#f5fbfe; }
+
+  /* Tabs at the top of the Orders/Summary body — a plain 2-way switch, kept
+     visually distinct from both the wizard's step tabs and the Older/Newer
+     pager so none of the three get confused for one another. */
+  .history-tabs{ display:flex; gap:8px; margin-bottom:12px; }
+  .history-tab{
+    flex:1; border:1.5px solid var(--border); background:#fff; border-radius:8px;
+    padding:9px 10px; font-size:12.5px; font-weight:700; color:var(--muted); cursor:pointer;
+  }
+  .history-tab.active{ background:var(--blue); border-color:var(--blue); color:#fff; }
+
+  /* ---------------- Order Summary: month total + calendar + reports ---------------- */
+  .summary-month-total{
+    background:#fff; border:1.5px solid var(--border); border-radius:10px;
+    padding:12px; margin-bottom:12px; text-align:center;
+  }
+  .summary-month-total .smt-label{ font-size:11.5px; color:var(--muted); font-weight:600; }
+  .summary-month-total .smt-value{ font-size:22px; font-weight:800; color:var(--ink); margin-top:2px; }
+  .cal-card{ background:#fff; border:1.5px solid var(--border); border-radius:10px; padding:10px; margin-bottom:14px; }
+  .cal-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .cal-header button{
+    border:1.5px solid var(--border); background:#fff; border-radius:8px;
+    width:32px; height:32px; font-size:14px; font-weight:700; color:var(--ink); cursor:pointer;
+  }
+  .cal-header .cal-month-label{ font-size:13px; font-weight:800; color:var(--ink); }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+  .cal-daylabel{ text-align:center; font-size:10px; font-weight:700; color:var(--muted); padding:2px 0; }
+  .cal-cell{
+    aspect-ratio:1; border-radius:7px; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; font-size:11.5px; color:var(--ink);
+    background:#f7f9fa; position:relative;
+  }
+  .cal-cell.cal-empty{ background:transparent; }
+  .cal-cell.cal-has-orders{ background:var(--green-bg); color:var(--green-text); font-weight:700; cursor:pointer; }
+  .cal-cell.cal-has-orders:hover{ outline:1.5px solid var(--green-text); }
+  .cal-cell.cal-today{ box-shadow:inset 0 0 0 2px var(--blue); }
+  .cal-cell .cal-count{ font-size:9px; font-weight:700; margin-top:1px; }
+  .cal-day-orders{ margin-bottom:14px; }
+  .cal-day-orders h4{ font-size:12px; margin:0 0 6px; color:var(--ink); }
+
+  .report-tabs{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .report-tab{
+    border:1.5px solid var(--border); background:#fff; border-radius:20px;
+    padding:7px 12px; font-size:11.5px; font-weight:700; color:var(--muted); cursor:pointer;
+  }
+  .report-tab.active{ background:var(--ink); border-color:var(--ink); color:#fff; }
+  .report-card{ background:#fff; border:1.5px solid var(--border); border-radius:10px; padding:12px; }
+  .report-big-number{ text-align:center; padding:10px 0; }
+  .report-big-number .rbn-value{ font-size:28px; font-weight:800; color:var(--ink); }
+  .report-big-number .rbn-label{ font-size:11.5px; color:var(--muted); font-weight:600; margin-top:2px; }
+  .report-row{
+    display:flex; justify-content:space-between; align-items:center; font-size:12.5px;
+    padding:7px 0; border-bottom:1px dashed var(--border);
+  }
+  .report-row:last-child{ border-bottom:none; }
+  .report-row .rr-name{ color:var(--ink); font-weight:600; }
+  .report-row .rr-count{ color:var(--blue); font-weight:800; }
+  .report-empty{ text-align:center; color:var(--muted); font-size:12px; padding:14px; }
+
+  /* ---------------- Editing-an-existing-order banner ----------------
+     Amber, not blue, so it visually reads as "this is a different mode
+     right now" rather than blending in with the app's normal chrome
+     (install banner, master-data bar) which are both blue-toned. */
+  .editing-banner{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--amber-bg); color:var(--amber-text); font-size:12.5px; font-weight:700;
+    padding:10px 14px;
+  }
+  .editing-banner.hidden{ display:none; }
+  .editing-banner button{
+    border:1.5px solid var(--amber-text); background:transparent; color:var(--amber-text);
+    border-radius:8px; padding:6px 10px; font-size:11.5px; font-weight:700; cursor:pointer;
+    flex-shrink:0;
+  }
+
+  /* ---------------- Post-submit "send yourself a copy" banner ----------------
+     Green/WhatsApp-toned, not amber like the editing banner, so it reads as
+     a positive confirmation rather than a mode warning. Shown right after a
+     successful Submit — a real tap here (not an auto-opened second WhatsApp
+     chat) is what makes the deep link into the rep's own WhatsApp reliably
+     open instead of risking being blocked as an unrequested popup. */
+  .selfcopy-banner{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    background:var(--green-bg); color:var(--green-text); font-size:12.5px; font-weight:700;
+    padding:10px 14px;
+  }
+  .selfcopy-banner.hidden{ display:none; }
+  .selfcopy-banner span{ flex:1; }
+  .selfcopy-banner button{
+    border:1.5px solid var(--green-text); background:transparent; color:var(--green-text);
+    border-radius:8px; padding:6px 10px; font-size:11.5px; font-weight:700; cursor:pointer;
+    flex-shrink:0;
+  }
+  .selfcopy-banner .scb-dismiss{
+    border-color:transparent; padding:6px 8px;
+  }
+
+  /* ---------------- Stepper ---------------- */
+  .stepper{
+    display:flex;
+    background:#fff;
+    border-bottom:1px solid var(--border);
+    padding:10px 10px 8px;
+    position:sticky; top:0; z-index:5;
+  }
+  .step{ flex:1; text-align:center; color:var(--muted); cursor:pointer; user-select:none; }
+  .step .num{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:24px; height:24px; border-radius:50%;
+    background:var(--gray-bg); color:var(--muted);
+    font-size:12px; font-weight:700; margin-bottom:3px;
+  }
+  .step .lbl{ display:block; font-size:10px; font-weight:600; letter-spacing:.2px; text-transform:uppercase; }
+  .step.active .num{ background:var(--blue); color:#fff; }
+  .step.active .lbl{ color:var(--ink); }
+  .step.done .num{ background:var(--green-text); color:#fff; }
+  .step.done .lbl{ color:var(--green-text); }
+
+  /* ---------------- Wizard body ---------------- */
+  .wizard{ flex:1; padding:14px 14px 90px; }
+  .panel-step{ display:flex; flex-direction:column; gap:12px; animation:fadein .18s ease; }
+  @keyframes fadein{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+  .card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:14px;
+  }
+  .card h2{ font-size:13px; margin:0 0 10px; color:var(--ink); font-weight:800; letter-spacing:.2px; text-transform:uppercase; }
+  .card h2 .hint2{ display:block; font-size:11px; font-weight:500; color:var(--muted); text-transform:none; margin-top:2px; letter-spacing:0; }
+
+  .field{ display:flex; flex-direction:column; gap:5px; margin-bottom:12px; }
+  .field:last-child{ margin-bottom:0; }
+  .field label{ font-size:12px; font-weight:700; color:var(--ink); }
+  .field:has(> input[required]) > label::after,
+  .field:has(> select[required]) > label::after,
+  .field:has(> .combo > input[required]) > label::after,
+  .field:has(> textarea[required]) > label::after{ content:" *"; color:var(--red-text); }
+  /* Required <select> elements have no ":placeholder-shown" equivalent to
+     exempt them while untouched, so a bare "select:invalid" rule here
+     would turn every required dropdown red the instant the page loads —
+     before the user has done anything — fighting for attention with
+     whichever field is actually meant to be filled in first. Selects only
+     get marked invalid the JS way (validateRequiredFieldsIn, after an
+     actual failed Next/Submit attempt), matching how the other fields
+     behave once they've been touched. */
+  .field input:invalid:not(:placeholder-shown), .field textarea:invalid:not(:placeholder-shown){
+    border-color:var(--red-text) !important;
+    background-color:rgba(179,38,30,0.05);
+  }
+  .field .opt{ font-weight:500; color:var(--muted); font-size:11px; }
+  .field input, .field select, .field textarea{
+    border:1.5px solid var(--border);
+    border-radius:8px;
+    padding:10px 12px;
+    /* 16px+ prevents iOS Safari from auto-zooming the page when a field
+       is focused — anything smaller triggers an unwanted zoom-in. */
+    font-size:16px;
+    background:#fbfcfd;
+    color:#1a2733;
+    font-family:inherit;
+    width:100%;
+    min-height:44px;
+  }
+  .field textarea{ min-height:56px; resize:vertical; }
+  .field input:focus, .field select:focus, .field textarea:focus{
+    outline:none; border-color:var(--blue); background:#fff;
+    box-shadow:0 0 0 3px rgba(0,174,239,0.12);
+  }
+  .field-hint{ font-size:11px; color:var(--muted); margin-top:1px; }
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:16px 12px; align-items:start; margin-bottom:12px; }
+  .grid2 .field{ margin-bottom:0; }
+  .grid2:last-child{ margin-bottom:0; }
+
+  /* ---------------- Product search / combobox ---------------- */
+  .combo{ position:relative; }
+  .combo-results{
+    position:absolute; left:0; right:0; top:calc(100% + 4px);
+    background:#fff; border:1px solid var(--border); border-radius:10px;
+    box-shadow:0 8px 24px rgba(16,24,40,0.14);
+    max-height:320px; overflow-y:auto; z-index:20;
+  }
+  .combo-item{
+    padding:10px 12px; border-bottom:1px solid #f1f3f4; cursor:pointer;
+    display:flex; justify-content:space-between; align-items:center; gap:8px;
+  }
+  .combo-item:last-child{ border-bottom:none; }
+  .combo-item:hover, .combo-item:active{ background:#f5fbfe; }
+  .combo-item .ci-l{ min-width:0; }
+  .combo-item .ci-style{ font-weight:800; font-size:12.5px; color:var(--ink); }
+  .combo-item .ci-desc{ font-size:11.5px; color:#556; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .combo-item .ci-r{ text-align:right; flex-shrink:0; }
+  .combo-item .ci-mrp{ font-size:12px; font-weight:700; color:var(--ink); }
+  .stock-badge{ font-size:9.5px; font-weight:700; padding:2px 6px; border-radius:20px; display:inline-block; margin-top:2px; }
+  .stock-badge.in{ background:var(--green-bg); color:var(--green-text); }
+  .stock-badge.out{ background:var(--gray-bg); color:var(--gray-text); }
+  .combo-empty{ padding:14px; text-align:center; color:var(--muted); font-size:12.5px; }
+  .combo-empty.new-customer{ color:var(--green-text); background:var(--green-bg); border-radius:8px; font-weight:600; }
+
+  /* ---------------- Add-to-order panel ---------------- */
+  .add-panel{
+    border:1.5px solid var(--blue); border-radius:10px; padding:12px;
+    background:#f5fbfe;
+  }
+  .add-panel .ap-title{ font-weight:800; font-size:13.5px; color:var(--ink); }
+  .add-panel .ap-desc{ font-size:11.5px; color:#556; margin-bottom:8px; }
+  .qty-stepper{ display:flex; align-items:center; gap:8px; margin:8px 0; }
+  .qty-stepper button{
+    width:38px; height:38px; border-radius:8px; border:1.5px solid var(--border);
+    background:#fff; font-size:18px; font-weight:700; color:var(--ink); cursor:pointer;
+  }
+  .qty-stepper input{
+    width:80px; text-align:center; font-size:16px; font-weight:800;
+    border:1.5px solid var(--border); border-radius:8px; padding:8px; min-height:38px;
+  }
+  .qty-note{ font-size:11px; margin-top:2px; }
+  .qty-note.ok{ color:var(--green-text); }
+  .qty-note.warn{ color:var(--red-text); }
+  .ap-preview{ font-size:12.5px; color:var(--ink); margin:6px 0 10px; }
+  .ap-preview b{ font-weight:800; }
+  .ap-actions{ display:flex; gap:8px; }
+
+  /* ---------------- Buttons ---------------- */
+  .btn{
+    border:none; border-radius:9px; padding:12px 16px; font-size:14px; font-weight:700;
+    cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    min-height:44px; width:100%;
+  }
+  .btn-primary{ background:var(--blue); color:#fff; }
+  .btn-primary:hover{ background:var(--blue-dark); }
+  .btn-outline{ background:#fff; border:1.5px solid var(--border); color:var(--ink); }
+  .btn-outline:hover{ background:#f6f8f9; }
+  .btn-ghost{ background:transparent; color:var(--muted); font-weight:600; }
+  .btn-whatsapp{ background:var(--whatsapp); color:#fff; font-size:15px; padding:14px 16px; }
+  .btn-whatsapp:hover{ background:var(--whatsapp-dark); }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .btn-row{ display:flex; gap:8px; }
+  .btn-row .btn{ flex:1; }
+
+  /* ---------------- Cart list ---------------- */
+  .cart-header{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+  .cart-header h2{ margin:0; }
+  .cart-empty{ text-align:center; color:var(--muted); font-size:12.5px; padding:20px 10px; }
+  .cart-list{ display:flex; flex-direction:column; gap:8px; }
+  .cart-item{
+    border:1.5px solid var(--border); border-radius:10px; padding:10px 12px;
+    display:flex; justify-content:space-between; align-items:flex-start; gap:8px;
+  }
+  .cart-item.rejected{ border-color:#f3c9c6; background:#fffafa; }
+  .cart-item.accepted{ border-color:#cfe9d3; background:#fafffb; }
+  .ci-name{ font-weight:800; font-size:12.5px; color:var(--ink); }
+  .ci-sub{ font-size:11px; color:var(--muted); margin-top:1px; }
+  .ci-fields{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:8px; }
+  .ci-fields > div{ display:flex; flex-direction:column; gap:2px; }
+  .ci-fields label{ font-size:9.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.2px; }
+  .ci-fields input{
+    width:100%; text-align:center; padding:5px 2px; border:1.5px solid var(--border); border-radius:6px;
+    font-weight:700; font-size:16px; min-height:34px;
+  }
+  .ci-calc{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; font-size:11.5px; color:var(--muted); }
+  .ci-value{ font-weight:800; font-size:12.5px; color:var(--ink); }
+  .ci-badge{ font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:20px; text-transform:uppercase; letter-spacing:.2px; }
+  .ci-badge.ok{ background:var(--green-bg); color:var(--green-text); }
+  .ci-badge.bad{ background:var(--red-bg); color:var(--red-text); }
+  .ci-reason{ font-size:11px; color:var(--red-text); margin-top:5px; }
+  .ci-remove{
+    background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer;
+    width:28px; height:28px; border-radius:50%; flex-shrink:0;
+  }
+  .ci-remove:hover{ background:var(--red-bg); color:var(--red-text); }
+
+  /* ---------------- Sticky mini summary (step 3) ---------------- */
+  .mini-summary{
+    position:sticky; bottom:80px; margin-top:6px;
+    background:var(--ink); color:#fff; border-radius:10px;
+    padding:9px 14px; font-size:12px; font-weight:700;
+    display:flex; justify-content:space-between; gap:10px;
+    box-shadow:var(--shadow);
+  }
+  .mini-summary span.rej{ color:#ffb4ae; }
+  .mini-summary span.acc{ color:#b7f0c2; }
+
+  /* ---------------- Review step ---------------- */
+  .stat-tiles{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+  .stat-tile{ border-radius:10px; padding:12px 8px; text-align:center; }
+  .stat-tile .n{ font-size:22px; font-weight:800; display:block; }
+  .stat-tile .t{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
+  .stat-tile.total{ background:#eef6fb; color:var(--blue-dark); }
+  .stat-tile.accepted{ background:var(--green-bg); color:var(--green-text); }
+  .stat-tile.rejected{ background:var(--red-bg); color:var(--red-text); }
+
+  .reject-list{ display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+  .reject-row{ font-size:12px; background:var(--red-bg); color:var(--red-text); border-radius:8px; padding:8px 10px; }
+  .reject-row b{ font-weight:800; }
+
+  .review-recap{ font-size:12.5px; color:#334; display:flex; flex-direction:column; gap:4px; }
+  .review-recap .rr{ display:flex; justify-content:space-between; gap:8px; }
+  .review-recap .rr span:first-child{ color:var(--muted); }
+  .edit-link{ font-size:11.5px; color:var(--blue-dark); font-weight:700; cursor:pointer; }
+
+  .totals-box{ display:flex; justify-content:space-between; align-items:center; padding-top:8px; border-top:1px dashed var(--border); margin-top:8px; }
+  .totals-box .tv{ font-size:19px; font-weight:800; color:var(--ink); }
+
+  .status-line{ text-align:center; font-weight:700; font-size:12.5px; padding:9px; border-radius:8px; }
+  .status-line.ready{ background:var(--green-bg); color:var(--green-text); }
+  .status-line.warn{ background:var(--amber-bg); color:var(--amber-text); }
+  .status-line.empty{ background:var(--gray-bg); color:var(--gray-text); }
+
+  .sheet-status{ font-size:10.5px; font-weight:700; padding:4px 9px; border-radius:20px; display:inline-block; }
+  .sheet-status.off{ background:var(--gray-bg); color:var(--gray-text); }
+  .sheet-status.on{ background:var(--green-bg); color:var(--green-text); }
+
+  /* ---------------- Master data (Google Sheet) sync bar ---------------- */
+  .masterdata-bar{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:6px 14px; font-size:10.5px; font-weight:700;
+    border-bottom:1px solid var(--border);
+  }
+  .masterdata-bar#masterDataBar{ position:relative; }
+  .masterdata-bar button{
+    background:none; border:none; cursor:pointer; font-size:13px; line-height:1;
+    padding:2px 4px; border-radius:6px; flex-shrink:0;
+  }
+  .masterdata-bar button:hover{ background:rgba(0,0,0,0.06); }
+  .masterdata-bar span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .masterdata-bar.off{ background:var(--gray-bg); color:var(--gray-text); }
+  .masterdata-bar.ok{ background:var(--green-bg); color:var(--green-text); }
+  .masterdata-bar.stale{ background:var(--amber-bg); color:var(--amber-text); }
+  .masterdata-bar.error{ background:var(--red-bg); color:var(--red-text); }
+  .masterdata-bar.syncing{ background:#eef6fb; color:var(--blue-dark); }
+
+  /* ---------------- Unified "install this app" banner ---------------- */
+  /* One banner, whatever the platform: a real Install button when the
+     browser supports triggering it (Android/desktop Chrome, etc.), or
+     plain instructions when it can only be done manually (iOS). Sits
+     right below the top bar — the first thing a new user sees, on
+     purpose, since getting installed once matters more than anything
+     else in the app for a non-technical user. */
+  .install-banner{
+    display:flex; align-items:center; gap:10px;
+    background:var(--lime); color:var(--ink); padding:10px 14px;
+  }
+  .install-banner-text{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .install-banner-text strong{ font-size:13px; font-weight:800; }
+  .install-banner-text span{ font-size:11px; font-weight:600; opacity:.85; line-height:1.3; }
+  .install-banner-btn{
+    background:var(--ink); color:#fff; border:none; border-radius:8px;
+    padding:9px 14px; font-size:12.5px; font-weight:800; cursor:pointer; flex-shrink:0;
+  }
+  .install-banner-btn:hover{ background:#0a2531; }
+  .install-banner-close{
+    background:none; border:none; color:var(--ink); opacity:.55; font-size:15px;
+    cursor:pointer; flex-shrink:0; padding:4px;
+  }
+  .install-banner-close:hover{ opacity:.9; }
+
+  /* ---------------- Bottom nav ---------------- */
+  .wizard-nav{
+    position:fixed; left:0; right:0; bottom:0;
+    max-width:640px; margin:0 auto;
+    background:#fff; border-top:1px solid var(--border);
+    padding:10px 14px; padding-bottom:calc(10px + env(safe-area-inset-bottom));
+    display:flex; gap:10px; align-items:center;
+    box-shadow:0 -2px 10px rgba(16,24,40,0.06);
+  }
+  .wizard-nav .btn{ flex:1; }
+  .wizard-nav .nav-info{ flex:0 0 auto; font-size:11px; color:var(--muted); text-align:center; min-width:56px; }
+
+  a.copy-link, .toast{ }
+  .toast{
+    position:fixed; top:14px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:10px 16px; border-radius:8px;
+    font-size:12.5px; font-weight:700; z-index:50; box-shadow:var(--shadow);
+    opacity:0; pointer-events:none; transition:opacity .2s ease;
+  }
+  .toast.show{ opacity:1; }
+
+  [hidden]{ display:none !important; }
+
+  /* ---------------- Wider screens: a little breathing room ---------------- */
+  @media (min-width:520px){
+    .wizard{ padding:20px 20px 96px; }
+    .grid2{ grid-template-columns:1fr 1fr; }
+  }
+  @media print{
+    .stepper, .wizard-nav, .combo-results, .mini-summary{ display:none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="topbar-center">
+      <div class="brand">MYFITNESS <span class="sep">|</span> PRO.FITNESS</div>
+      <div class="subbrand">Tanvi Fitness Pvt. Ltd. · Order Booking</div>
+    </div>
+    <button class="history-btn" id="historyBtn" title="Order History">🕘</button>
+    <button class="summary-btn" id="summaryBtn" title="Order Summary">📊</button>
+  </div>
+
+  <!-- Order History overlay: browse previously submitted orders, either from
+       a tappable list or one-at-a-time with ‹ Older / Newer › paging.
+       Read-only by design — reopening a past order here can never resend it
+       or overwrite the order currently being built. -->
+  <div class="history-overlay hidden" id="historyOverlay">
+    <div class="history-sheet">
+      <div class="history-head">
+        <h3 id="historyTitle">Order History</h3>
+        <button type="button" class="history-close" id="historyClose" title="Close">✕</button>
+      </div>
+      <div class="history-body" id="historyBody"></div>
+    </div>
+  </div>
+
+  <!-- One unified, hard-to-miss install banner — replaces the old small
+       topbar icon (Android) and separate iOS hint. Whichever platform
+       fired (or a plain "not supported here" case), only one message
+       shows at a time, right where a first-time user is guaranteed to
+       see it, above everything else in the app. -->
+  <div class="install-banner" id="installBanner" hidden>
+    <div class="install-banner-text">
+      <strong id="installBannerTitle">📲 Install this app</strong>
+      <span id="installBannerSubtext">Add it to your home screen — opens instantly, no browser needed.</span>
+    </div>
+    <button type="button" class="install-banner-btn" id="installBannerBtn" hidden>Install</button>
+    <button type="button" class="install-banner-close" id="installBannerClose" title="Not now">✕</button>
+  </div>
+
+  <div class="masterdata-bar off" id="masterDataBar">
+    <span id="masterDataText">Master data: using built-in defaults</span>
+    <button type="button" id="btnRefreshMasterData" title="Refresh from Google Sheet">🔄</button>
+  </div>
+
+  <!-- Shown only while editing an existing order (via Order History's
+       ✎ Edit This Order button) so it's never ambiguous whether Submit
+       will create a new order or update one already sent out. -->
+  <div class="editing-banner hidden" id="editingBanner">
+    <span id="editingBannerText">Editing an existing order</span>
+    <button type="button" id="btnCancelEdit">Cancel Edit</button>
+  </div>
+
+  <!-- Shown right after a successful Submit, on the fresh Step 1 screen —
+       lets the rep optionally send themselves the same item/SKU/total
+       details on WhatsApp, for their own personal record, separate from
+       the copy that already went to the customer/order-processing team. -->
+  <div class="selfcopy-banner hidden" id="selfCopyBanner">
+    <span>✅ Order sent — want a copy for your own records?</span>
+    <button type="button" id="btnSendSelfCopy">📩 WhatsApp Me a Copy</button>
+    <button type="button" class="scb-dismiss" id="btnDismissSelfCopy" title="Dismiss">✕</button>
+  </div>
+
+  <div class="stepper" id="stepper">
+    <div class="step active" data-step="1"><span class="num">1</span><span class="lbl">Details</span></div>
+    <div class="step" data-step="2"><span class="num">2</span><span class="lbl">Pricing</span></div>
+    <div class="step" data-step="3"><span class="num">3</span><span class="lbl">Products</span></div>
+    <div class="step" data-step="4"><span class="num">4</span><span class="lbl">Review</span></div>
+  </div>
+
+  <main class="wizard">
+
+    <!-- STEP 1 : ORDER DETAILS -->
+    <section class="panel-step" id="step-1">
+      <div class="card">
+        <h2>Order Details<span class="hint2">Order Number is generated for you — start by choosing the customer</span></h2>
+        <div class="field">
+          <label>Order Number <span class="opt">(auto-generated)</span></label>
+          <input id="orderNo" type="text" placeholder="e.g. SO-00231" required readonly style="background:#f4f7f9; color:var(--muted);">
+          <span class="field-hint" id="orderNoHint">Generated automatically — no action needed.</span>
+        </div>
+        <div class="field">
+          <label>Customer Name <span class="opt">(search saved buyers or type a new name)</span></label>
+          <div class="combo">
+            <input id="customerName" type="text" placeholder="Search buyer name or city… or type a new customer name" autocomplete="off" required>
+            <div class="combo-results" id="buyerResults" hidden></div>
+          </div>
+          <span class="field-hint" id="customerFieldHint">Search from saved buyers, or type a new customer name to add them to this order — save them in the Customer Master sheet so they show up in search next time.</span>
+        </div>
+        <div class="field">
+          <label>Shipping Address</label>
+          <textarea id="shipAddr" placeholder="Delivery address"></textarea>
+        </div>
+        <div class="field">
+          <label>Sales Channel</label>
+          <select id="salesChannel" required>
+            <option value="">-- Select --</option>
+            <option>General Trade</option>
+            <option>Supplement</option>
+          </select>
+        </div>
+        <button class="btn btn-ghost" id="btnReset" style="margin-top:8px;">↺ Start New Order</button>
+      </div>
+    </section>
+
+    <!-- STEP 2 : PRICING & FULFILMENT -->
+    <section class="panel-step" id="step-2" hidden>
+      <div class="card">
+        <h2>Pricing &amp; Fulfilment</h2>
+        <div class="field">
+          <label>Fulfilment Location</label>
+          <select id="location" required>
+            <option value="">-- Select Location --</option>
+            <option value="all">All Locations</option>
+            <option value="bhiwandi" selected>wms_bhiwandi_offline</option>
+            <option value="ggn">wms_ggn_offline</option>
+          </select>
+        </div>
+        <div class="grid2" id="marginGT">
+          <div class="field">
+            <label>Margin % (MF)</label>
+            <select id="marginMF" required></select>
+          </div>
+          <div class="field">
+            <label>Margin % (PF)</label>
+            <select id="marginPF" required></select>
+          </div>
+        </div>
+        <div class="grid2" id="marginSupplement" hidden>
+          <div class="field">
+            <label>Margin % (Peanut Butter)</label>
+            <select id="marginPB" required></select>
+          </div>
+          <div class="field">
+            <label>Margin % (Oats / Other)</label>
+            <select id="marginNONPB" required></select>
+          </div>
+        </div>
+        <span class="field-hint">GST is fixed at 5% for all products. Margin fields shown depend on the selected Sales Channel.</span>
+      </div>
+    </section>
+
+    <!-- STEP 3 : ADD PRODUCTS -->
+    <section class="panel-step" id="step-3" hidden>
+      <div class="card">
+        <h2>Search &amp; Add Products<span class="hint2">Type a style code, product name or EAN to find an item fast</span></h2>
+        <div class="field">
+          <div class="combo">
+            <input type="text" id="productSearch" placeholder="🔍 Search products…" autocomplete="off">
+            <div class="combo-results" id="comboResults" hidden></div>
+          </div>
+        </div>
+        <div class="add-panel" id="addPanel" hidden></div>
+      </div>
+
+      <div class="card">
+        <div class="cart-header">
+          <h2 style="margin:0;">Order Lines (<span id="cartCount">0</span>)</h2>
+        </div>
+        <div id="cartList" class="cart-list"><div class="cart-empty">No products added yet — search above to add your first item.</div></div>
+      </div>
+
+      <div class="mini-summary" id="miniSummary">
+        <span>Lines: <b id="msLines">0</b></span>
+        <span class="acc">Accepted: <b id="msAccepted">0</b></span>
+        <span class="rej">Rejected: <b id="msRejected">0</b></span>
+        <span>₹<b id="msValue">0</b></span>
+      </div>
+    </section>
+
+    <!-- STEP 4 : REVIEW & SUBMIT -->
+    <section class="panel-step" id="step-4" hidden>
+      <div class="card">
+        <h2>Order Validation Summary</h2>
+        <div class="stat-tiles">
+          <div class="stat-tile total"><span class="n" id="rvLines">0</span><span class="t">Total Lines</span></div>
+          <div class="stat-tile accepted"><span class="n" id="rvAccepted">0</span><span class="t">Accepted</span></div>
+          <div class="stat-tile rejected"><span class="n" id="rvRejected">0</span><span class="t">Rejected</span></div>
+        </div>
+        <div id="rejectList" class="reject-list"></div>
+      </div>
+
+      <div class="card">
+        <h2>Order Value Summary</h2>
+        <div class="review-recap">
+          <div class="rr"><span>Total Order Value (Before GST)</span><span id="rvBeforeGst">₹0.00</span></div>
+          <div class="rr"><span>Total Discount Given</span><span id="rvDiscount">₹0.00</span></div>
+          <div class="rr"><span>Total GST Amount</span><span id="rvGst">₹0.00</span></div>
+        </div>
+        <div class="totals-box">
+          <span style="font-size:12px; color:var(--muted); font-weight:700;">NET ORDER VALUE (FINAL PAYABLE)</span>
+          <span class="tv" id="rvTotalValue">₹0.00</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 style="margin:0;">Order Details</h2>
+          <span class="edit-link" data-goto="1">Edit ✎</span>
+        </div>
+        <div class="review-recap" id="recapDetails" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 style="margin:0;">Order Lines <span class="hint2" style="display:inline; text-transform:none; font-weight:500;">(product, qty, unit price, discount, GST &amp; line total)</span></h2>
+          <span class="edit-link" data-goto="3">Edit ✎</span>
+        </div>
+        <div id="reviewCartList" class="cart-list" style="margin-top:8px;"></div>
+      </div>
+
+      <div id="statusLine" class="status-line empty">NO PRODUCTS ADDED — build your order in step 3</div>
+
+      <div class="card" style="display:flex; flex-direction:column; gap:10px;">
+        <button class="btn btn-whatsapp" id="btnSubmitWA">📤 Submit &amp; Send to WhatsApp</button>
+        <div class="btn-row">
+          <button class="btn btn-outline" id="btnExport">⬇ Export CSV</button>
+          <button class="btn btn-outline" id="btnPrint">🖨 Print</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="btnEmail">✉ Email (optional)</button>
+        </div>
+        <div style="text-align:center;"><span class="sheet-status off" id="sheetStatus">Sheet sync: not configured</span></div>
+      </div>
+    </section>
+
+  </main>
+
+  <div class="wizard-nav">
+    <button class="btn btn-outline" id="btnBack">‹ Back</button>
+    <div class="nav-info" id="navInfo">Step 1 / 4</div>
+    <button class="btn btn-primary" id="btnNext">Next ›</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+// ============================================================================
+// CONFIG — fill these in once, then this file is ready to hand to your team.
+// ============================================================================
+
+// Google Apps Script Web App URL. Logs every submitted order to the
+// "MyFitness Order History" Google Sheet — see
+// MyFitness_Order_History_Setup_Guide.md for the one-time deployment steps.
+// Paste the deployed .../exec URL below once you have it.
+const SHEET_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzSsxidy2dETung25XCRve3dz_74y3ct7bfuswhB1yLfnkxkz2tTDukRJ6MC3kGNIwU/exec";
+
+// Order Processing team's WhatsApp number, digits only with country code,
+// e.g. "919876543210" for +91 98765 43210. Leave blank to let the sales rep
+// pick the contact/group themselves from their own WhatsApp on each send.
+const WHATSAPP_NUMBER = "";
+
+const INVENTORY_DATE = "07-Aug-2026";
+
+// Google Sheet as master data. Points at "MyFitness_Master_Data" (Google
+// Sheet id 1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0), one tab per key
+// below. NOTE: this account's Google Workspace admin has "Publish to the
+// web" disabled org-wide (confirmed 2026-08-13 — the /pub CSV links all
+// 401'd even after sharing was opened up), so these use the plain
+// /export?format=csv&gid=... link instead — same idea, works off regular
+// "Anyone with the link" sharing rather than the blocked Publish-to-web
+// feature. Verified working via an actual browser fetch() (not just a
+// server-side check) before wiring in, so this isn't just reachable, it's
+// CORS-clean for a page like this one calling it client-side.
+// To find a tab's gid: open the sheet, click the tab, and read the number
+// after "#gid=" in the browser's address bar.
+// See MASTER_DATA_SETUP_GUIDE.md for background. Leave a URL blank to keep
+// using this file's built-in sample data for that tab — the app works
+// either way, it just won't stay in sync with the sheet until the URL is
+// filled in.
+const MASTER_DATA_URLS = {
+  customers: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=226489656",           // Customer Master tab
+  productsGT: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=639235062",          // Product Master — General Trade tab
+  productsSupplement: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=1572320868"   // Product Master — Supplement tab
+};
+
+// A manual tap on the "Refresh" button always re-fetches. Otherwise, once
+// all three tabs have synced successfully, the app won't hit the sheet
+// again for this many minutes — switching steps or reopening the app
+// repeatedly shouldn't hammer Google's servers.
+const MASTER_DATA_CACHE_MINUTES = 15;
+
+// ============================================================================
+// PWA - PROGRESSIVE WEB APP
+// ============================================================================
+let deferredPrompt;
+
+// Register service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration failed:', err));
+}
+
+function isIosDevice(){
+  return /iP(hone|od|ad)/.test(navigator.platform) ||
+    (navigator.userAgent.includes('Mac') && navigator.maxTouchPoints > 1); // iPadOS 13+ reports as "Mac"
+}
+function isRunningStandalone(){
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+}
+
+// ---- Unified install banner ----------------------------------------------
+// Non-technical sales users get exactly ONE install message, styled the
+// same everywhere, whichever platform they're on:
+//  - Android/desktop Chrome (and anything else that fires
+//    'beforeinstallprompt'): a real "Install" button that triggers the
+//    browser's own install flow in one tap.
+//  - iOS Safari: plain instructions, since Apple doesn't let any website
+//    trigger installation programmatically — Share -> Add to Home Screen
+//    is unavoidable there, no matter what this app does.
+// Once actually installed (or explicitly dismissed for this session),
+// it stays out of the way; otherwise it reappears next time the app is
+// opened in a browser tab, since not-yet-installed is the one thing worth
+// being a little persistent about for this audience.
+const installBanner = document.getElementById('installBanner');
+const installBannerSubtext = document.getElementById('installBannerSubtext');
+const installBannerBtn = document.getElementById('installBannerBtn');
+const installBannerClose = document.getElementById('installBannerClose');
+
+function showInstallBanner(mode){
+  if(!installBanner) return;
+  if(isRunningStandalone()) return; // already installed and running as the app — nothing to do
+  let dismissedThisSession = false;
+  try{ dismissedThisSession = !!sessionStorage.getItem('installBannerDismissed'); } catch(e){}
+  if(dismissedThisSession) return;
+
+  if(mode === 'android'){
+    installBannerSubtext.textContent = 'One tap adds it to your home screen — opens instantly next time, no browser needed.';
+    installBannerBtn.hidden = false;
+  } else { // ios
+    installBannerSubtext.textContent = 'Tap the Share icon below, then "Add to Home Screen".';
+    installBannerBtn.hidden = true;
+  }
+  installBanner.hidden = false;
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  showInstallBanner('android');
+});
+
+if(installBannerBtn){
+  installBannerBtn.addEventListener('click', async () => {
+    if(!deferredPrompt) return;
+    installBannerBtn.disabled = true;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log('Install prompt outcome:', outcome);
+    deferredPrompt = null;
+    installBannerBtn.disabled = false;
+    installBanner.hidden = true;
+    if(outcome !== 'accepted'){
+      // Declined this time — don't nag again within this same visit, but
+      // it'll show again next time the app is opened since it's still
+      // not installed.
+      try{ sessionStorage.setItem('installBannerDismissed','1'); } catch(e){}
+    }
+  });
+}
+
+if(installBannerClose){
+  installBannerClose.addEventListener('click', () => {
+    installBanner.hidden = true;
+    try{ sessionStorage.setItem('installBannerDismissed','1'); } catch(e){}
+  });
+}
+
+window.addEventListener('appinstalled', () => {
+  console.log('PWA was installed');
+  toast('App installed successfully!');
+  if(installBanner) installBanner.hidden = true;
+});
+
+if(isIosDevice()){
+  showInstallBanner('ios');
+}
+
+// Clear error styling when user types
+document.querySelectorAll('[required]').forEach(field => {
+  field.addEventListener('input', () => {
+    if (field.value && field.value.trim() !== '') {
+      field.style.borderColor = '';
+    }
+  });
+  field.addEventListener('change', () => {
+    if (field.value && field.value.trim() !== '') {
+      field.style.borderColor = '';
+    }
+  });
+});
+
+// ----------------------------------------------------------------------------
+// PRODUCT MASTERS — one array per Sales Channel. Each channel's array is the
+// single source of truth for that channel's products; they are never merged.
+// To add another channel later: add its product array below, register it in
+// PRODUCT_MASTERS, and add its margin dropdown(s) to the Pricing step markup
+// — no other code needs to change.
+//
+// FALLBACK_* below are the built-in defaults, used only until (or unless)
+// live data is fetched from your Google Sheet — see the MASTER DATA
+// (GOOGLE SHEETS SYNC) section further down. They also act as the safety
+// net if the sheet is unreachable (offline, URL not configured yet, etc.),
+// so the app always has something to work with.
+// ----------------------------------------------------------------------------
+
+// General Trade (GT) master — unchanged from the original build.
+const FALLBACK_SKUS_GT = [{"style":"C22701","desc":"Chocolate  Smooth 227G","ean":"8904327600436","netwt":227,"casepack":24,"mrp":159,"brand":"MF","stock":{"bhiwandi":17832,"ggn":0,"all":17832}},{"style":"C22702","desc":"Chocolate  Crunchy 227G","ean":"8904327600948","netwt":227,"casepack":24,"mrp":159,"brand":"MF","stock":{"bhiwandi":0,"ggn":0,"all":0}},{"style":"C22703","desc":"Chocolate  Crispy 227G","ean":"8904327600955","netwt":227,"casepack":24,"mrp":159,"brand":"MF","stock":{"bhiwandi":0,"ggn":0,"all":0}},{"style":"C5101","desc":"Chocolate  Smooth 510G","ean":"8904327600405","netwt":510,"casepack":12,"mrp":319,"brand":"MF","stock":{"bhiwandi":83412,"ggn":0,"all":83412}},{"style":"C5102","desc":"Chocolate  Crunchy 510G","ean":"8904327600924","netwt":510,"casepack":12,"mrp":319,"brand":"MF","stock":{"bhiwandi":116988,"ggn":0,"all":116988}},{"style":"C5103","desc":"Chocolate  Crispy 510G","ean":"8904327600931","netwt":510,"casepack":12,"mrp":319,"brand":"MF","stock":{"bhiwandi":12876,"ggn":0,"all":12876}},{"style":"C510A02","desc":"Chocolate  With Almond Crunch 510G","ean":"8904327600696","netwt":510,"casepack":12,"mrp":379,"brand":"MF","stock":{"bhiwandi":18300,"ggn":0,"all":18300}},{"style":"DC5101","desc":"Olympia Edition Dark Chocolate  With Added Whey: Smooth 510G","ean":"8904327601969","netwt":510,"casepack":12,"mrp":399,"brand":"MF","stock":{"bhiwandi":0,"ggn":0,"all":0}},{"style":"DC5102","desc":"Olympia Edition Dark Chocolate  With Added Whey: Crunchy 510G","ean":"8904327601976","netwt":510,"casepack":12,"mrp":399,"brand":"MF","stock":{"bhiwandi":0,"ggn":0,"all":0}},{"style":"DC5103","desc":"Olympia Edition Dark Chocolate  With Added Whey: Crispy 510G","ean":"8904327601983","netwt":510,"casepack":12,"mrp":399,"brand":"MF","stock":{"bhiwandi":0,"ggn":0,"all":0}},{"style":"C90002","desc":"Chocolate  Crunchy 900G","ean":"8904327602577","netwt":900,"casepack":6,"mrp":499,"brand":"MF","stock":{"bhiwandi":6798,"ggn":0,"all":6798}},{"style":"O22701","desc":"Original  Smooth 227G","ean":"8904327600412","netwt":227,"casepack":24,"mrp":159,"brand":"MF","stock":{"bhiwandi":0,"ggn":0,"all":0}},{"style":"O22702","desc":"Original  Crunchy 227G","ean":"8904327600429","netwt":227,"casepack":24,"mrp":159,"brand":"MF","stock":{"bhiwandi":120,"ggn":0,"all":120}},{"style":"O5101","desc":"Original  Smooth 510G","ean":"8904327600382","netwt":510,"casepack":12,"mrp":319,"brand":"MF","stock":{"bhiwandi":0,"ggn":0,"all":0}},{"style":"O5102","desc":"Original  Crunchy 510G","ean":"8904327600399","netwt":510,"casepack":12,"mrp":319,"brand":"MF","stock":{"bhiwandi":48,"ggn":0,"all":48}},{"style":"N5101","desc":"Natural  Smooth 510G","ean":"8904327600320","netwt":510,"casepack":12,"mrp":319,"brand":"MF","stock":{"bhiwandi":72,"ggn":0,"all":72}},{"style":"N5102","desc":"Natural  Crunchy 510G","ean":"8904327600337","netwt":510,"casepack":12,"mrp":319,"brand":"MF","stock":{"bhiwandi":21252,"ggn":0,"all":21252}},{"style":"ZN5102","desc":"Zero Classic  510G","ean":"8904327602348","netwt":510,"casepack":12,"mrp":349,"brand":"MF","stock":{"bhiwandi":1320,"ggn":0,"all":1320}},{"style":"JC5102","desc":" Chocolate Crunchy Junior 510G","ean":"8904327602010","netwt":510,"casepack":12,"mrp":339,"brand":"MF","stock":{"bhiwandi":0,"ggn":0,"all":0}},{"style":"JC5101","desc":" Chocolate Smooth Junior 510G","ean":"8904327602003","netwt":510,"casepack":12,"mrp":339,"brand":"MF","stock":{"bhiwandi":0,"ggn":0,"all":0}},{"style":"COA3751P","desc":"Dark Chocolate Rolled Oats 375G","ean":"8904327602331","netwt":375,"casepack":14,"mrp":339,"brand":"PF","stock":{"bhiwandi":7952,"ggn":0,"all":7952}},{"style":"OA1001P","desc":"Pro.Fitness Rolled Oats 900g","ean":"8904327602324","netwt":900,"casepack":12,"mrp":320,"brand":"PF","stock":{"bhiwandi":2292,"ggn":0,"all":2292}},{"style":"C90001","desc":"Chocolate  Smooth 900G","ean":"8904327602829","netwt":900,"casepack":6,"mrp":499,"brand":"MF","stock":{"bhiwandi":0,"ggn":0,"all":0}},{"style":"C201","desc":"Chocolate  Smooth 20G","ean":"8904327600634","netwt":20,"casepack":200,"mrp":1,"brand":"MF","stock":{"bhiwandi":81000,"ggn":0,"all":81000}},{"style":"N90002","desc":"MyFitness Natural Crunchy  900g","ean":"8904327602881","netwt":900,"casepack":6,"mrp":499,"brand":"MF","stock":{"bhiwandi":3192,"ggn":0,"all":3192}},{"style":"O90002","desc":"MyFitness Original Crunchy  900g","ean":"8904327602874","netwt":900,"casepack":6,"mrp":499,"brand":"MF","stock":{"bhiwandi":3600,"ggn":0,"all":3600}},{"style":"O90001","desc":"MyFitness Original Smooth  900g","ean":"8904327602898","netwt":900,"casepack":6,"mrp":499,"brand":"MF","stock":{"bhiwandi":5142,"ggn":0,"all":5142}}];
+
+// Supplement master — mapped from "MyFitness_Order_Booking_Form_Supplement_dt_300526.xlsx"
+// (Sheet1, columns B–N): Style Code, Product Description, Scan Identifier (EAN),
+// GM (net weight), UOM (case-pack multiple), MRP, and Category (PB = Peanut
+// Butter, NON PB = Oats/other). "marginGroup" mirrors GT's brand-based margin
+// split so the same suggested-pricing logic can drive both channels.
+const FALLBACK_SKUS_SUPPLEMENT = [{"style":"COA20P","desc":"Pro.Fitness High Protein Dark Chocolate Rolled","ean":"8904327602805","netwt":"20G","casepack":100,"mrp":39,"category":"NON PB","marginGroup":"NONPB","stock":null},{"style":"COA9001P","desc":"Pro.Fitness High protein Chocolate  OATS","ean":"8904327602812","netwt":"900g","casepack":10,"mrp":649,"category":"NON PB","marginGroup":"NONPB","stock":null},{"style":"COA3751P","desc":"PRO.FITNESS Dark Chocolate Rolled Oats 375g","ean":"8904327602331","netwt":375,"casepack":14,"mrp":339,"category":"NON PB","marginGroup":"NONPB","stock":null},{"style":"OA1001P","desc":"MYFITNESS ROLLED OATS 900G","ean":"8904327602324","netwt":900,"casepack":12,"mrp":320,"category":"NON PB","marginGroup":"NONPB","stock":null},{"style":"O12501","desc":"MYFITNESS ORIGINAL PEANUT BUTTER SMOOTH 1250G","ean":"8904327600443","netwt":1250,"casepack":6,"mrp":669,"category":"PB","marginGroup":"PB","stock":null},{"style":"O25002","desc":"MYFITNESS ORIGINAL PEANUT BUTTER CRUNCHY 2500G","ean":"8904327600825","netwt":2500,"casepack":4,"mrp":1219,"category":"PB","marginGroup":"PB","stock":null},{"style":"O12502","desc":"MYFITNESS ORIGINAL PEANUT BUTTER CRUNCHY 1250G","ean":"8904327600450","netwt":1250,"casepack":6,"mrp":669,"category":"PB","marginGroup":"PB","stock":null},{"style":"DC5101","desc":"MYFITNESS OLYMPIA EDITION DARK CHOCOLATE PEANUT BUTTER WITH ADDED WHEY: SMOOTH 510G","ean":"8904327601969","netwt":510,"casepack":12,"mrp":399,"category":"PB","marginGroup":"PB","stock":null},{"style":"DC1001","desc":"MYFITNESS OLYMPIA EDITION DARK CHOCOLATE PEANUT BUTTER WITH ADDED WHEY: SMOOTH 1KG","ean":"8904327601914","netwt":1000,"casepack":6,"mrp":689,"category":"PB","marginGroup":"PB","stock":null},{"style":"DC5102","desc":"MYFITNESS OLYMPIA EDITION DARK CHOCOLATE PEANUT BUTTER WITH ADDED WHEY: CRUNCHY 510G","ean":"8904327601976","netwt":510,"casepack":12,"mrp":399,"category":"PB","marginGroup":"PB","stock":null},{"style":"DC1002","desc":"MYFITNESS OLYMPIA EDITION DARK CHOCOLATE PEANUT BUTTER WITH ADDED WHEY: CRUNCHY 1KG","ean":"8904327601921","netwt":1000,"casepack":6,"mrp":689,"category":"PB","marginGroup":"PB","stock":null},{"style":"DC5103","desc":"MYFITNESS OLYMPIA EDITION DARK CHOCOLATE PEANUT BUTTER WITH ADDED WHEY: CRISPY 510G","ean":"8904327601983","netwt":510,"casepack":12,"mrp":399,"category":"PB","marginGroup":"PB","stock":null},{"style":"DC1003","desc":"MYFITNESS OLYMPIA EDITION DARK CHOCOLATE PEANUT BUTTER WITH ADDED WHEY: CRISPY 1KG","ean":"8904327601938","netwt":1000,"casepack":6,"mrp":689,"category":"PB","marginGroup":"PB","stock":null},{"style":"N12501","desc":"MYFITNESS NATURAL PEANUT BUTTER SMOOTH 1250G","ean":"8904327600900","netwt":1250,"casepack":6,"mrp":669,"category":"PB","marginGroup":"PB","stock":null},{"style":"N12502","desc":"MYFITNESS NATURAL PEANUT BUTTER CRUNCHY 1250","ean":"8904327600917","netwt":1250,"casepack":6,"mrp":669,"category":"PB","marginGroup":"PB","stock":null},{"style":"C25001","desc":"MYFITNESS CHOCOLATE PEANUT BUTTER SMOOTH 2500G","ean":"8904327600832","netwt":2500,"casepack":4,"mrp":1299,"category":"PB","marginGroup":"PB","stock":null},{"style":"C12501","desc":"MYFITNESS CHOCOLATE PEANUT BUTTER SMOOTH 1250G","ean":"8904327600351","netwt":1250,"casepack":6,"mrp":669,"category":"PB","marginGroup":"PB","stock":null},{"style":"C25002","desc":"MYFITNESS CHOCOLATE PEANUT BUTTER CRUNCHY 2500G","ean":"8904327600849","netwt":2500,"casepack":4,"mrp":1299,"category":"PB","marginGroup":"PB","stock":null},{"style":"C12502","desc":"MYFITNESS CHOCOLATE PEANUT BUTTER CRUNCHY 1250G","ean":"8904327600887","netwt":1250,"casepack":6,"mrp":669,"category":"PB","marginGroup":"PB","stock":null},{"style":"C12503","desc":"MYFITNESS CHOCOLATE PEANUT BUTTER CRISPY 1200G","ean":"8904327600894","netwt":1200,"casepack":6,"mrp":669,"category":"PB","marginGroup":"PB","stock":null},{"style":"C201","desc":"Chocolate Peanut Butter Smooth 20G","ean":"8904327600634","netwt":20,"casepack":200,"mrp":1,"category":"PB","marginGroup":"PB","stock":null}];
+
+// Known buyers (Name-City-State) for the searchable Customer Name field.
+// Typing a name that isn't in this list is fine — it's still used as-is.
+// Fallback only — see MASTER DATA (GOOGLE SHEETS SYNC) below.
+const FALLBACK_BUYERS = ["247 Nutrition-Bhopal-Madhya Pradesh", "247 Nutrition-Indore-Madhya Pradesh", "A G Traders-Raigad-Maharashtra", "A H A Enterprises-Kollam-Kerala", "A M Sales-Surat-Gujarat", "A&A Enterprises-Kozhikode-Kerala", "A.D.C.S. Supplement-Burdwan-West Bengal", "A.H.A Agencies-Kollam-Kerala", "A.S Enterprises-Hapur-Uttar Pradesh", "A.S. Traders-Sharanpur-Uttar Pradesh", "Aadhya Enterprisess-Bengaluru-Karnataka", "Aakarsh Traders-New Delhi-Delhi", "Aarya Super Bazar-Dharwad-Karnataka", "Aask Facility Solutions Llp-Ghaziabad-Uttar Pradesh", "Agc Foods-Kharghar-Maharashtra", "Agc Foods-Raigad-Maharashtra", "Agc Logistics Venture Private Limited-Ambala-Haryana", "Ahuja Commodities Private Limited-Indore-Madhya Pradesh", "Ahuja Traders-Jaipur-Rajasthan", "Ajfan International Retails Llp-MALAPURAM-Kerala", "Almas Supplement-Rohtas-Bihar", "Aman Medicose-Shahabad-Uttar Pradesh", "Amee Sales-Ahmedabad-Gujarat", "Amicus Natural Products Private Limited-Bengaluru Urban-Karnataka", "Amicus Natural Products Private Limited-Gurugram-Haryana", "Amicus Natural Products Private Limited-Mumbai Suburban-Maharashtra", "Amigos-Ahmedabad-Gujarat", "Angirash Fitness Private Limited-Solan-Himachal Pradesh", "Angirash Fitness-Baddi-Himachal Pradesh", "Annapurna Enterprises-Thane-Maharashtra", "Ap Nutrition-Surat-Gujarat", "Apex Medical Agency-Gwalior-Madhya Pradesh", "Archana Rao-Udupi-Karnataka", "Arihant Marketing-Mumbai-Maharashtra", "Arihant Sales-Surat-Gujarat", "Arjun Traders-North Delhi-Delhi", "Armada Distribution-THRISSUR-Kerala", "Ars Foods And Beverage Co.-Muzaffarnagar-Uttar Pradesh", "Aruna Enterprises-Delhi-Delhi", "Ater Multitrade Company-Indore-Madhya Pradesh", "Athlete Distributor-JAIPUR-Rajasthan", "Ayemi Trading Private Limited-Dimapur-Nagaland", "Ayurhub Incorporation-Pune-Maharashtra", "B.M. Food Supplement-Aligarh-Uttar Pradesh", "B.M. Food Supplement-Faridabad-Haryana", "Baba Mart-Kanpur Nagar-Uttar Pradesh", "Bajrang Traders-Faridabad-Haryana", "Balaji Enterprise-Surat-Gujarat", "Banwari Lal Arora And Sons-Delhi-Delhi", "Beard And Body Lovers-Udhampur-Jammu & Kashmir", "Best Protein-Kasargod-Kerala", "Beyond Supps-Bengaluru-Karnataka", "Bhawika Sales-Nagpur-Maharashtra", "Bhootpurv Ardh Sainik Kalyan Canteen-Agar Malwa-Madhya Pradesh", "Big Buddy Nutrition Hub-Faridabad-Haryana", "Binding Ventures Private Limited-Jabalpur-Madhya Pradesh", "Bluescale Llp-Gurgaon-Haryana", "Bluescale Llp-Jhajjar-Haryana", "Body Fitness Shop-Sangli-Maharashtra", "Body Fuel Supplement-Gurugram-Haryana", "Body Station-Srinagar-Jammu & Kashmir", "Boost Nutrition Store-Sonipat-Haryana", "Bossbull-Mumbai-Maharashtra", "Bright Nutricare Private Limited-Gurugram-Haryana", "Bright Nutricare Private Limited-Jhajjar-Haryana", "Brightboost Nutrition Private Limited-Khopoli-Maharashtra", "C S Enterprises-Hyderabad-Telangana", "Cabibite-Pune-Maharashtra", "Capsule Healthcare-Ahmedabad-Gujarat", "Chandra Shekhar Tiwari-Ranchi-Jharkhand", "Chiranji Lal Gupta And Sons Pvt Ltd-Chandigarh-Chandigarh", "Classic Impex-Mumbai-Maharashtra", "Crown Enterprises-Delhi-Delhi", "Crown Enterprises-New DelhI-Delhi", "Ctl Enterprises-Palakkad-Kerala", "Cubetiq Solutions Llp-KOLKATA-West Bengal", "D N Enterprises-North East Delhi-Delhi", "D&Z Trading-Hayderabad-Telangana", "Desi Origins-Siliguri-West Bengal", "Devuj Management Services Private Limited-Visakhapatnam-Andhra Pradesh", "Divy Shakti Sales-Delhi-Delhi", "Divya Enterprise-Mumbai-Maharashtra", "Dna Pharmacy-Gurugram-Haryana", "Dragon Supermart-Leh-Ladakh", "Dreamz World-Srinagar-Jammu & Kashmir", "Eattofitkart-Ahmedabad-Gujarat", "Eco Nutrition & Supplement-Kaimur-Bihar", "Eco Nutrition & Supplement-Sasaram-Bihar", "Edassery Agencies-Ernakulam-Kerala", "Eras Ventures Llp-Kozhikode-Kerala", "Everyday Nutrition-Rewari-Haryana", "Evis Healthcare Limited-Ahmedabad-Gujarat", "Exalt Corporation-Pune-Maharashtra", "F2 Foods-Ernakulam-Kerala", "Fairdeal Agency-Bhilai-Chhattisgarh", "Fairdeal Agency-Raipur-Chhattisgarh", "Fairdeal Enterprises-Durg-Chhattisgarh", "Fairdeal Enterprises-Raipur-Chhattisgarh", "Farooque Super Store-Indore-Madhya Pradesh", "Fattelal Maganlal Company-Nagpur-Maharashtra", "Fazzli Agro India Private Limited-Patna-Bihar", "Fazzli Agro India Private Limited-Ranchi-Jharkhand", "Fit And Fury-Hyderabad-Telangana", "Fit Factory-Karnal-Haryana", "Fit Lyfe Nutritions-Mathura-Uttar Pradesh", "Fitness And Nutrition Enterprises-Hyderabad-Telangana", "Fitness Aqua-New Delhi-Delhi", "Fitness Factory-Varanasi-Uttar Pradesh", "Fitness Fuel-Solapur-Maharashtra", "Fitness Hub-Bhavnagar-Gujarat", "Fitness Hub-Dewas-Madhya Pradesh", "Fitness World Nutrition-Jalgaon-Maharashtra", "Flex Pro Shop-Baramati-Maharashtra", "Fortune Enterprises-Thiruvananthapuram-Kerala", "G.Bakers-Parbhani-Maharashtra", "General Health Nutrition-Jamshedpur-Jharkhand", "Gift House-Kolkata-West Bengal", "Global Marketing Corporation-Udaipur-Rajasthan", "Global Protein Solutions-MUMBAI-Maharashtra", "Goel Associates-Lucknow-Uttar Pradesh", "Gokul Fitness Point-KHANDWA-Madhya Pradesh", "Govindam-Jaipur-Rajasthan", "Gr Nutrition-Ahmedabad-Gujarat", "Grace Trading-Kannur-Kerala", "Ground Zero International Private Limited-Gorakhpur-Uttar Pradesh", "Grow Healthy-Belagavi-Karnataka", "Grow Healthy-Bengaluru Rural-Karnataka", "Grow Healthy-Bengaluru Urban-Karnataka", "Grow Healthy-Dharwad-Karnataka", "Gym Food Nutrition-New Delhi-Delhi", "H&H Sales Corporation-Srinagar-Jammu & Kashmir", "Happy Shoppers-Shikrapur Nagar-Maharashtra", "Hari Om Agencies-Indore-Madhya Pradesh", "Harjan Enterprises-Mumbai-Maharashtra", "Harsh Impex Private Limited-KOLKATA-West Bengal", "Hashim Marketing-Bhatkal-Karnataka", "Health And Fitnesz Co-Siliguri-West Bengal", "Healthfiitxl-kolkata-West Bengal", "Hercules Sports & Fitness-Raigarh-Chhattisgarh", "Highborn Nutrition And Fitness Private Limited-Indore-Madhya Pradesh", "Highborn Nutrition And Fitness Private Limited-Khordha-Odisha", "Highborn Nutrition And Fitness Private Limited-Patna-Bihar", "Highborn Nutrition And Fitness Private Limited-Raipur-Chhattisgarh", "Highborn Nutrition And Fitness Private Limited-Ranchi-Jharkhand", "Highborn Nutrition And Fitness Private Limited-Visakhapatnam-Andhra Pradesh", "Highborn Nutrition And Fitness Private Limited-Visakhaptnam-Andhra Pradesh", "Hind Medicos-Patiala-Punjab", "Hkm Supplement Shop-Kaimur-Bihar", "I Marketing-KANNUR-Kerala", "I.I Impex-Srinagar-Jammu & Kashmir", "Ibbn Health Care-Jaipur-Rajasthan", "Icon Enterprises-Jaunpur-Uttar Pradesh", "Ikshvaku Enterprises-Hyderabad-Telangana", "Iron Addict Supplements-Kolkata-West Bengal", "J G S Muscle Factory-Morena-Madhya Pradesh", "Jay Vision-Vadodara-Gujarat", "Jmd Enterprise-Dehradun-Uttarakhand", "Js Enterprises-Bengaluru-Karnataka", "Juneja Ventures-Patna-Bihar", "K Star Agency-Indore-Madhya Pradesh", "Kings Nutritions-Kota-Rajasthan", "Kishor Distributers-Jabalpur-Madhya Pradesh", "Kk Enterprises-Delhi-Delhi", "Koushik'S The Supplement Store-Kolkata-West Bengal", "Krishna Enterprises-Gwalior-Madhya Pradesh", "Krishna Marketings-Thiruvalla-Kerala", "Krk Agencies-HYDERABAD-Telangana", "Krsna-Angul-Odisha", "Laxmi Telecom-Kamrup Metropolitan-Assam", "Levelup Supplement Store-Hubbali-Karnataka", "Life Stream Traders-Kasaragod-Kerala", "Lifters Paradise-Belgaum-Karnataka", "Liyu'S-Mysuru-Karnataka", "M Z Traders-Bangalore-Karnataka", "M/S 24 X 7 Executionists-Gautambuddha Nagar-Uttar Pradesh", "M/S A K Enterprises-Shahjahanpur-Uttar Pradesh", "M/S A.K. Traders-Ghazipur-Uttar Pradesh", "M/S Azamgarh Hunk Water-Allahabad-Uttar Pradesh", "M/S Azamgarh Hunk Water-Azamgarh-Uttar Pradesh", "M/S Bharat Trading Co.-Ghaziabad-Uttar Pradesh", "M/S Book World-Jammu-Jammu & Kashmir", "M/S Cozy Cure Nutrition-Kanpur Nagar-Uttar Pradesh", "M/S Cozy Cure Nutrition-Kanpur-Uttar Pradesh", "M/S G.G. Enterprises-Meerut-Uttar Pradesh", "M/S H S Enterprises-Bhopal-Madhya Pradesh", "M/S Indira Medical Store-Banda-Uttar Pradesh", "M/S J J Sports Nutrition-Allahabad-Uttar Pradesh", "M/S Kamdhenu Confectionery & General Store-Shahjahanpur-Uttar Pradesh", "M/S Khan Enterprises-DUMRAON-Bihar", "M/S Kishore Distributors-Ramgadh-Jharkhand", "M/S Kuber Enterprises-Panchkula-Haryana", "M/S Maruti Mega Mart-Rupaidiha-Uttar Pradesh", "M/S Mittal Traders-Bulandshahar-Uttar Pradesh", "M/S Muscle Lab-Shamli-Uttar Pradesh", "M/S New Gandhi Dryfood-Budaun-Uttar Pradesh", "M/S Nutrition Impact-Bijnor-Uttar Pradesh", "M/S Om Trading Company-Agra-Uttar Pradesh", "M/S Prabha Enterprises-Varanasi-Uttar Pradesh", "M/S Protein Planet-Bhopal-Madhya Pradesh", "M/S Protein Planet-INDORE-Madhya Pradesh", "M/S R L Associates-KANPUR-Uttar Pradesh", "M/S Rgl Marketing-GHAZIABAD-Uttar Pradesh", "M/S S D Enterprises-Cuttack-Odisha", "M/S Sandhya Foods & Infotainment-Bhubaneswar-Odisha", "M/S Shri Sai Shyam Marketing-Surguja-Chhattisgarh", "M/S Srm Traders And Surgical-Haridwar-Uttarakhand", "M/S Uday Agencies-Ranga Reddy-Telangana", "M/S Vishal Enterprises-Mangalore-Karnataka", "M/S Witness The Fitness Private Limited-Gautambuddha Nagar-Uttar Pradesh", "M2 Super Bazaar-Indore-Madhya Pradesh", "Maaida Enterprise-Surat-Gujarat", "Mahadev Distributions-Chandigarh-Chandigarh", "Mangalam International-Saharanpur-Uttar Pradesh", "Maslak Distributors-Nanminda-Kerala", "Md Aadil-Ballia-Uttar Pradesh", "Mdm And Sons-Motihari-Bihar", "Medics-Ludhiana-Punjab", "Mega Star Nutrition-Raigad-Maharashtra", "Mhtradelink Services Private Limited-Thane West-Maharashtra", "Mhtradelink Services Private Limited-Thane-Maharashtra", "Mirka Ventures-Namakkal-Tamil Nadu", "Mission Fitness Protein Shop-Rewa-Madhya Pradesh", "Modi & Sons-Jabalpur-Madhya Pradesh", "Mohammad Wahid Ali-Siwan-Bihar", "Mtf Fitness-Bengaluru Urban-Karnataka", "Multistar Enterprises-Mumbai-Maharashtra", "Muscle & Fitness Care-Darjeeling-West Bengal", "Muscle Invador Sports And Nutrition-JAMMU-Jammu & Kashmir", "Muscle Physique Nutritions-Varanasi-Uttar Pradesh", "Muscle Pump Nutrition-Solan-Himachal Pradesh", "Muscle Research Nutrition-Mohali-Punjab", "Muscle Research Nutrition-Varanasi-Uttar Pradesh", "Muscle Sniper-Bhiwani-Haryana", "Muscleup-The Nutrition House-Srinagar-Jammu & Kashmir", "N.V. Trading-Ulhasnagar-Maharashtra", "Nb Sports & Nutrition-Surat-Gujarat", "Niharika Agencies-Jalgaon-Maharashtra", "Nikita Enterprises-KOTA-Rajasthan", "Nitika Enterprises-West Delhi-Delhi", "Noora Enterprises-Kadiri-Andhra Pradesh", "Number Three Enterprises-Guwahati-Assam", "Nutrabay Retail Private Limited-Delhi-Delhi", "Nutri Health Care-SAS Nagar-Punjab", "Nutristack-Kashipur-Uttarakhand", "Nutrisup Solutions-New Delhi-Delhi", "Nutrition .Com-Nagpur-Maharashtra", "Nutrition Hub-Bareilly-Uttar Pradesh", "Nutrition Impact-Moradabad-Uttar Pradesh", "Nutrition Voice-Karnal-Haryana", "Nutrition World-Ghaziabad-uttar Pradesh", "Nutrition World-GUWAHATI-Assam", "Nutrition World-Yamunanagar-Haryana", "Om Enterprises-Agra-Uttar Pradesh", "Om Medico Agency-NAVI MUMBAI-Maharashtra", "Omnipresent Services-Bangaluru-Karnataka", "Omraje Chandrakant Borade-Beed-Maharashtra", "Op Agencies-Malappuram-Kerala", "Oxygen Health And Fitness Club-Solapur-Maharashtra", "P & S Essentials Private Limited-Delhi-Delhi", "P & S Essentials Private Limited-Noida-Uttar Pradesh", "Pardeshi Tradelinks-Kolhapur-Maharashtra", "Passion-Mumbai Suburban-Maharashtra", "Perfect Solutions-North East Delhi-Delhi", "Pooja Enterprises-Lucknow-Uttar Pradesh", "Popeye Supplement Store-Udaipur-Rajasthan", "Pp Enterprises-Bhubaneswar-Odisha", "Pratyaksh Healthcare-Gwalior-Madhya Pradesh", "Pro Star-The Supplement Store-RANGA REDDY-Telangana", "Protein Corner-Lucknow-Uttar Pradesh", "Protein Factory-Mangalore-Karnataka", "Protein House-Solapur-Maharashtra", "Protein Hub The Wholesale Supplements Store-SULTANPUR-Uttar Pradesh", "Protein Planet-Vapi-Gujarat", "Protm Nutrition Private Limited-Kasargod-Kerala", "Proway-Surat-Gujarat", "Puneet Perfumers-Satna-Madhya Pradesh", "Qty Business Private Limited-Bilaspur-Chhattisgarh", "Quality Foods And Sports Nutrition-Aurangabad-Maharashtra", "R B Enterprises-Khordha-Odisha", "R D Enterprises-Raigad-Maharashtra", "R P Enterprises (Protein World)-Ranchi-Jharkhand", "R R Enterprises-Bengaluru Urban-Karnataka", "R.K. Enterprises-East Delhi-Delhi", "R.K. Enterprises-Faizabad-Uttar Pradesh", "R.P Enterprises-Patna-Bihar", "R.R.Enterprises-Meerut-Uttar Pradesh", "Radhe Enterprise-Ahmedabad-Gujarat", "Raj Pharma & Supplements-Chennai-Tamil Nadu", "Rajput Enterprises-Raipur-Chhattisgarh", "Rakesh Distributor-Hyderabad-Telangana", "Ravi Marketing-Bangalore-Karnataka", "Reformation Nutrition-Nainital-Uttarakhand", "Reza Sales Agency-Silvassa-Dadra and Nagar Haveli and Daman & Diu", "Royal International Exports-Hapur-Uttar Pradesh", "Rubby Marketing-Raipur-Chhattisgarh", "Rudrani Enterprises-Khordha-Odisha", "Rvsp Enterprises-Kangra-Himachal Pradesh", "S S Trading Company-Palghar-Maharashtra", "S. S. Enterprises-Mahendragarh-Haryana", "S. S. Enterprises-Rewari-Haryana", "S.M.K. Trading Company-Lucknow-Uttar Pradesh", "S.S. Enterprises-JODHPUR-Rajasthan", "S.S.Traders-Sangrur-Punjab", "Sa Enterprises-Sambalpur-Odisha", "Saanvi Distributors-Udupi-Karnataka", "Sahil Enterprises-Goa-Goa", "Sai Enterprises-Pune-Maharashtra", "Sakshi Agency-Pune-Maharashtra", "Samarth Traders-Aurangabad-Maharashtra", "Sancus Networks Private Limited-NEW DELHI-Delhi", "Sancus Networks Private Limited-Samalkha-Delhi", "Sanjay Traders-Pilibhit-Uttar Pradesh", "Satyapara Trading & Transport Llp-Gurugram-Haryana", "Shah Enterprises-Meerut-Uttar Pradesh", "Shah Laxminarayan Satishchandra Exim Private Limited-Mumbai-Maharashtra", "Shah Laxminarayan Satishchandra Exim Private Limited-Thane-Maharashtra", "Shiv Shambhu Enterprises-Delhi-Delhi", "Shiva Traders-Delhi-Delhi", "Shivaay Hunk Enterprises-Agra-Uttar Pradesh", "Shivansh Enterprises-Ambala-Haryana", "Shraye Corporation-Mumbai-Maharashtra", "Shraye Corporation-Thane-Maharashtra", "Shree Anand Marketing-Dewas-Madhya Pradesh", "Shree Balaji Marketing-Kamrup Metropolitan-Assam", "Shree Ganesh Enterprise-Guwahati-Assam", "Shree Ganeshay Traders-Delhi-Delhi", "Shree Ganpati Distributions-Chandigarh-Chandigarh", "Shree Ram Enterprises-Prayagraj-Uttar Pradesh", "Shri Arihant Enterprise-Ahmedabad-Gujarat", "Shri Datta Enterprises-Kolhapur-Maharashtra", "Shri Shradha Creation-Udham Singh Nagar-Uttarakhand", "Shyam Baba Agency-Gwalior-Madhya Pradesh", "Silicon Valley-Malappuram-Kerala", "Singh Enterprises-Bhopal-Madhya Pradesh", "Siva Associates-Chennai-Tamil Nadu", "Skb Enterprises-Bengaluru Urban-Karnataka", "Skl Venture-Lucknow-Uttar Pradesh", "Social Distributors-Udaipur-Rajasthan", "Soni Enterprises-Ranchi-Jharkhand", "Srm Pharmacy-Gurugram-Haryana", "Star Food Supplement-Rewari-Haryana", "Star Nutrition-Bareilly-Uttar Pradesh", "Style Nutrition-Kanpur-Uttar Pradesh", "Sun Riddhi Enterprises-Chennai-Tamil Nadu", "Supplement Arena-Gautambuddha Nagar-Uttar Pradesh", "Supplement Heritage And Hub Lifestyle Private Limited-Meerut-Uttar Pradesh", "Supplement Zone-Shamli-Uttar Pradesh", "Svas Sports-Vadodara-Gujarat", "Taneja Traders-Jaipur-Rajasthan", "Taneja Traders-saharanpur-Uttar Pradesh", "Tara Enterprises-Bilaspur-Chhattisgarh", "The Arnold Food Supplement-North West Delhi-Delhi", "The Athlete Store-Jaipur-Rajasthan", "The Athlete Store-JODHPUR-Rajasthan", "The Buddy Traders-Shamli-Uttar Pradesh", "The Caffeine Shop-Vijayawada-Andhra Pradesh", "The Fit Capsule-Auraiya-Uttar Pradesh", "The Nutrition Hub-Bijnoor-Uttar Pradesh", "The Regal Nutrition Hub-Bulandshahar-Uttar Pradesh", "Tm Nutrition-Kasaragod-Kerala", "Treasurehunt Retail Private Limited-Bengaluru Rural-Karnataka", "Treasurehunt Retail Private Limited-Bengaluru Urban-Karnataka", "Trickfit-Badlapur-Maharashtra", "Trickfit-Dombivli-Maharashtra", "Trimlife Inc Retail-Banglore-Karnataka", "Trisha Enterprises-PUNE-Maharashtra", "True Health-Udham Singh Nagar-Uttarakhand", "True Nutrition Performance Private Limited-Ghaziabad-Uttar Pradesh", "Tsg Fitness Corner-South Andaman-Andaman and Nicobar Islands", "U S Nutrition-Palghar-Maharashtra", "U S Nutrition-Surat-Gujarat", "Udvika Nutraceuticals-Sonipat-Haryana", "Ultimate Traders-Bengaluru-Karnataka", "Unicorn Enterprises-Ghaziabad-Uttar Pradesh", "Unplanned Journeys Private Limited-Ballari-Karnataka", "Us Nutrition-Ahmedabad-Gujarat", "Utkarsh Trading Company-Jammu-Jammu & Kashmir", "Vandana Enterprise-Halol-Gujarat", "Vani Traders-Thane-Maharashtra", "Varad Distributors-Solapur-Maharashtra", "Vardhman Distributor-Indore-Madhya Pradesh", "Vardhman Enterprises-Mandsaur-Madhya Pradesh", "Vibrance Enterprises-Pune-Maharashtra", "Vikas Sports Nutrition(Vsn)-Tikamgarh-Madhya Pradesh", "Vinayak Enterprises-Krishna-Andhra Pradesh", "Vitran Enterprise-Surat-Gujarat", "Vn Enterprises-Indore-Madhya Pradesh", "Vrs Agencies-Bengaluru Urban-Karnataka", "White Water Retail Private Limited-Faridabad-Haryana", "Windhya Healthcare-Rajkot-Gujarat", "World Of Nutrition-Cuttack-Odisha", "World Of Nutrition-Kolkata-West Bengal", "Yen Purity-Kannur-Kerala", "Yes Pharma-Hyderabad-Telangana"];
+
+// ============================================================================
+// STATE
+// ============================================================================
+function loadSubmittedOrderNos(){
+  try{ return new Set(JSON.parse(localStorage.getItem('submittedOrderNos') || '[]')); }
+  catch(e){ return new Set(); }
+}
+
+const state = {
+  step: 1,
+  // Cart lines are keyed by the product's style code (not its array index)
+  // on purpose: once master data can be refreshed live from Google Sheets
+  // mid-session (see MASTER DATA section below), the row order/positions in
+  // SKUS_GT / SKUS_SUPPLEMENT can change between an "add to cart" and a
+  // later re-render. Storing an index would silently point a cart line at
+  // the wrong product after a refresh; the style code is stable.
+  cart: [],   // [{style, qty, unitPrice, discount}]
+  isSubmitting: false,           // guards against double-tap/double-submit races
+  submittedOrderNos: loadSubmittedOrderNos(),  // orders already sent, so the same one can't go out twice
+  // Set to an order number while that order is loaded for editing (via
+  // Order History's ✎ Edit This Order), null otherwise. When set, Submit
+  // updates that same order instead of creating a new one, and the
+  // duplicate-submission guard lets that one specific order number through
+  // again on purpose. Cleared by resetForm() — see there for the full flow.
+  editingOrderNo: null
+};
+
+const els = {};
+['orderNo','orderNoHint','customerName','buyerResults','shipAddr','salesChannel',
+ 'historyBtn','summaryBtn','historyOverlay','historyBody','historyClose','historyTitle',
+ 'location','marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
+ 'productSearch','comboResults',
+ 'addPanel','cartList','cartCount','miniSummary','msLines','msAccepted','msRejected','msValue',
+ 'rvLines','rvAccepted','rvRejected','rejectList','recapDetails','reviewCartList','rvTotalValue',
+ 'rvBeforeGst','rvDiscount','rvGst',
+ 'statusLine','sheetStatus','btnBack','btnNext','navInfo','toast','stepper',
+ 'masterDataBar','masterDataText','btnRefreshMasterData',
+ 'editingBanner','editingBannerText','btnCancelEdit',
+ 'selfCopyBanner','btnSendSelfCopy','btnDismissSelfCopy'
+].forEach(id => els[id] = document.getElementById(id));
+
+// GST is fixed for every product — no longer a user-editable field.
+const GST_RATE = 0.05;
+
+function fillMarginOptions(sel, min, max, def){
+  sel.innerHTML='';
+  for(let v=min; v<=max+0.0001; v+=0.01){
+    const pct = Math.round(v*100);
+    const opt = document.createElement('option');
+    opt.value = (pct/100).toFixed(2);
+    opt.textContent = pct + '%';
+    if(pct===def) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+fillMarginOptions(els.marginMF, 0.30, 0.43, 43);
+fillMarginOptions(els.marginPF, 0.30, 0.38, 38);
+fillMarginOptions(els.marginPB, 0.30, 0.50, 45);
+fillMarginOptions(els.marginNONPB, 0.25, 0.45, 38);
+
+// ============================================================================
+// SALES CHANNEL → PRODUCT MASTER
+// Each channel owns its own product array and margin dropdown(s). Adding a
+// new channel later only means adding an entry here (plus its markup) —
+// nothing else in the app needs to change.
+// ============================================================================
+// Mutable master data — starts out as the bundled fallback, then gets
+// replaced wholesale (never merged/mutated in place) by loadMasterData()
+// once a Google Sheet CSV successfully loads. Everything downstream reads
+// through PRODUCT_MASTERS[...].skus / the BUYERS variable at call time, so
+// swapping these references is enough to make the whole app "live".
+let BUYERS = FALLBACK_BUYERS.slice();
+
+const PRODUCT_MASTERS = {
+  'General Trade': {
+    skus: FALLBACK_SKUS_GT,
+    marginFieldsId: 'marginGT',
+    marginGroupOf: sku => sku.brand === 'PF' ? 'PF' : 'MF',
+    marginSelectFor: group => group === 'PF' ? els.marginPF : els.marginMF
+  },
+  'Supplement': {
+    skus: FALLBACK_SKUS_SUPPLEMENT,
+    marginFieldsId: 'marginSupplement',
+    marginGroupOf: sku => sku.marginGroup === 'NONPB' ? 'NONPB' : 'PB',
+    marginSelectFor: group => group === 'NONPB' ? els.marginNONPB : els.marginPB
+  }
+};
+const DEFAULT_CHANNEL = 'General Trade';
+
+// ============================================================================
+// MASTER DATA (GOOGLE SHEETS SYNC)
+// ----------------------------------------------------------------------------
+// Turns the Google Sheet configured in MASTER_DATA_URLS above into the
+// live source for Customers and Products. Design notes:
+//  - Each tab is fetched, parsed and swapped in as ONE new array — never
+//    merged/mutated row-by-row — so a bad fetch can't leave half-old,
+//    half-new data lying around.
+//  - Column names are matched case-insensitively against a short alias
+//    list per field, so small header differences in your sheet don't
+//    break the import (e.g. "Style" or "Style Code" both work).
+//  - On failure it falls back to the last known-good copy in
+//    localStorage, and if there's no cache either, to the FALLBACK_*
+//    arrays bundled in this file — the product/customer list is never
+//    left empty just because of a network hiccup.
+// ============================================================================
+const masterData = {
+  status: {
+    customers:          { source: 'fallback', updatedAt: null, error: null },
+    productsGT:          { source: 'fallback', updatedAt: null, error: null },
+    productsSupplement:  { source: 'fallback', updatedAt: null, error: null }
+  }
+};
+
+// ---- tiny RFC4180-ish CSV parser: quoted fields, embedded commas/newlines,
+// doubled "" as an escaped quote — enough for what Google Sheets exports.
+function parseCsv(text){
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  text = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  for(let i=0; i<text.length; i++){
+    const ch = text[i];
+    if(inQuotes){
+      if(ch === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else { inQuotes = false; }
+      } else { field += ch; }
+    } else if(ch === '"'){ inQuotes = true; }
+    else if(ch === ','){ row.push(field); field = ''; }
+    else if(ch === '\n'){ row.push(field); rows.push(row); row = []; field = ''; }
+    else { field += ch; }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  return rows.filter(r => !(r.length===1 && r[0].trim()===''));
+}
+
+function csvToObjects(text){
+  const rows = parseCsv(text);
+  if(rows.length===0) return [];
+  const headers = rows[0].map(h => String(h||'').trim());
+  return rows.slice(1).map(r=>{
+    const obj = {};
+    headers.forEach((h,i)=>{ obj[h] = (r[i]!==undefined ? String(r[i]).trim() : ''); });
+    return obj;
+  });
+}
+
+// Case/spacing-insensitive column lookup — tries each alias in turn so the
+// sheet's exact header wording doesn't have to match ours exactly.
+function pickCol(row, aliases){
+  const keys = Object.keys(row);
+  for(const alias of aliases){
+    const norm = alias.toLowerCase().replace(/[^a-z0-9]/g,'');
+    const key = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g,'') === norm);
+    if(key !== undefined && row[key] !== '') return row[key];
+  }
+  return '';
+}
+function csvNum(v, fallback){ const n = parseFloat(String(v).replace(/[₹,\s]/g,'')); return isNaN(n) ? fallback : n; }
+function csvInt(v, fallback){ const n = parseInt(String(v).replace(/[^\d.-]/g,''),10); return (isNaN(n) || n<=0) ? fallback : n; }
+
+function rowsToCustomers(rows){
+  return rows.map(r=>{
+    const name = pickCol(r, ['Name','Customer Name','Customer','Buyer','Buyer Name']);
+    if(!name) return null;
+    const city = pickCol(r, ['City']);
+    const state = pickCol(r, ['State']);
+    return [name, city, state].filter(Boolean).join('-');
+  }).filter(Boolean);
+}
+
+function rowsToProductsGT(rows){
+  return rows.map(r=>{
+    const style = pickCol(r, ['Style','Style Code','SKU']);
+    if(!style) return null;
+    const brandRaw = pickCol(r, ['Brand']).toUpperCase();
+    return {
+      style,
+      desc: pickCol(r, ['Description','Product Description','Desc']),
+      ean: pickCol(r, ['EAN','Scan Identifier','Barcode']),
+      netwt: pickCol(r, ['Net Wt','NetWt','GM','Net Weight']),
+      casepack: csvInt(pickCol(r, ['Case Pack','CasePack','UOM','Case-Pack']), 1),
+      mrp: csvNum(pickCol(r, ['MRP']), 0),
+      brand: brandRaw.includes('PF') ? 'PF' : 'MF',
+      stock: null
+    };
+  }).filter(Boolean);
+}
+
+function rowsToProductsSupplement(rows){
+  return rows.map(r=>{
+    const style = pickCol(r, ['Style','Style Code','SKU']);
+    if(!style) return null;
+    const categoryRaw = pickCol(r, ['Category']).toUpperCase();
+    const category = categoryRaw.includes('NON') ? 'NON PB' : 'PB';
+    return {
+      style,
+      desc: pickCol(r, ['Description','Product Description','Desc']),
+      ean: pickCol(r, ['EAN','Scan Identifier','Barcode']),
+      netwt: pickCol(r, ['Net Wt','NetWt','GM','Net Weight']),
+      casepack: csvInt(pickCol(r, ['Case Pack','CasePack','UOM','Case-Pack']), 1),
+      mrp: csvNum(pickCol(r, ['MRP']), 0),
+      category,
+      marginGroup: category === 'NON PB' ? 'NONPB' : 'PB',
+      stock: null
+    };
+  }).filter(Boolean);
+}
+
+function masterCacheKey(tab){ return 'masterData_' + tab; }
+function saveMasterCache(tab, data){
+  try{ localStorage.setItem(masterCacheKey(tab), JSON.stringify({ data, savedAt: Date.now() })); }
+  catch(e){ /* storage full/unavailable — the live fetch still worked for this session */ }
+}
+function loadMasterCache(tab){
+  try{
+    const raw = JSON.parse(localStorage.getItem(masterCacheKey(tab)) || 'null');
+    return (raw && Array.isArray(raw.data)) ? raw : null;
+  } catch(e){ return null; }
+}
+
+async function fetchCsv(url){
+  // Cache-bust so a refresh always sees the latest published version
+  // rather than a browser/CDN-cached copy of the CSV endpoint.
+  const bustUrl = url + (url.includes('?') ? '&' : '?') + '_=' + Date.now();
+  const res = await fetch(bustUrl, { cache: 'no-store' });
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  return res.text();
+}
+
+// Hydrate synchronously from localStorage before the first paint, so a
+// device that's already synced once shows real sheet data immediately
+// instead of flashing the bundled fallback while the network fetch is
+// still in flight (or when opened offline).
+function hydrateMasterDataFromCache(){
+  const c = loadMasterCache('customers');
+  if(c){ BUYERS = c.data; masterData.status.customers = { source:'cache', updatedAt:c.savedAt, error:null }; }
+  const g = loadMasterCache('productsGT');
+  if(g){ PRODUCT_MASTERS['General Trade'].skus = g.data; masterData.status.productsGT = { source:'cache', updatedAt:g.savedAt, error:null }; }
+  const s = loadMasterCache('productsSupplement');
+  if(s){ PRODUCT_MASTERS['Supplement'].skus = s.data; masterData.status.productsSupplement = { source:'cache', updatedAt:s.savedAt, error:null }; }
+}
+
+// Loads one configured tab and swaps its data in via applyFn. Falls back
+// to the last good cached copy on failure, then to fallbackData.
+async function loadOneTab(tab, url, rowMapper, applyFn, fallbackData){
+  const status = masterData.status[tab];
+  if(!url){
+    if(status.source !== 'cache'){ status.source = 'fallback'; status.error = null; applyFn(fallbackData); }
+    return;
+  }
+  try{
+    const csvText = await fetchCsv(url);
+    const parsed = rowMapper(csvToObjects(csvText));
+    if(parsed.length === 0) throw new Error('The sheet returned no usable rows — check the column headers against the setup guide.');
+    applyFn(parsed);
+    status.source = 'sheet'; status.error = null; status.updatedAt = Date.now();
+    saveMasterCache(tab, parsed);
+  } catch(err){
+    console.error('Master data fetch failed for "'+tab+'":', err);
+    const cached = loadMasterCache(tab);
+    if(cached){ applyFn(cached.data); status.source = 'cache'; status.error = err.message; status.updatedAt = cached.savedAt; }
+    else { applyFn(fallbackData); status.source = 'fallback'; status.error = err.message; }
+  }
+}
+
+async function loadMasterData(opts){
+  const force = !!(opts && opts.force);
+  // Nothing to fetch at all — don't flash a "Refreshing…" status for a
+  // feature that isn't configured yet, just reflect the fallback state.
+  if(!Object.values(MASTER_DATA_URLS).some(Boolean)){
+    renderMasterDataStatus();
+    return;
+  }
+  if(!force){
+    const allFreshFromSheet = Object.values(masterData.status).every(s =>
+      s.source === 'sheet' && s.updatedAt && (Date.now() - s.updatedAt) < MASTER_DATA_CACHE_MINUTES*60*1000
+    );
+    if(allFreshFromSheet) return;
+  }
+  renderMasterDataStatus('Refreshing master data…');
+  await Promise.all([
+    loadOneTab('customers', MASTER_DATA_URLS.customers, rowsToCustomers,
+      data => { BUYERS = data; }, FALLBACK_BUYERS),
+    loadOneTab('productsGT', MASTER_DATA_URLS.productsGT, rowsToProductsGT,
+      data => { PRODUCT_MASTERS['General Trade'].skus = data; }, FALLBACK_SKUS_GT),
+    loadOneTab('productsSupplement', MASTER_DATA_URLS.productsSupplement, rowsToProductsSupplement,
+      data => { PRODUCT_MASTERS['Supplement'].skus = data; }, FALLBACK_SKUS_SUPPLEMENT)
+  ]);
+  renderMasterDataStatus();
+  // Re-render anything already on screen so newly-loaded prices/names/
+  // customers show up immediately rather than only after the next click.
+  renderCart();
+  if(state.step===4) renderReview();
+}
+
+function renderMasterDataStatus(overrideText){
+  if(!els.masterDataText || !els.masterDataBar) return;
+  if(overrideText){
+    els.masterDataText.textContent = overrideText;
+    els.masterDataBar.className = 'masterdata-bar syncing';
+    return;
+  }
+  const anyConfigured = Object.values(MASTER_DATA_URLS).some(Boolean);
+  if(!anyConfigured){
+    els.masterDataText.textContent = 'Master data: using built-in defaults (Google Sheet not connected — see setup guide)';
+    els.masterDataBar.className = 'masterdata-bar off';
+    return;
+  }
+  const statuses = Object.values(masterData.status);
+  const hasError = statuses.some(s => s.error && s.source === 'fallback');
+  const hasStale = statuses.some(s => s.source === 'cache');
+  const allSynced = statuses.every(s => s.source === 'sheet');
+  const newestSync = statuses.map(s=>s.updatedAt).filter(Boolean).sort((a,b)=>b-a)[0];
+  const when = newestSync ? new Date(newestSync).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'}) : null;
+
+  if(hasError){
+    els.masterDataText.textContent = 'Master data: sheet sync failed — using built-in defaults. Tap 🔄 to retry.';
+    els.masterDataBar.className = 'masterdata-bar error';
+  } else if(allSynced){
+    els.masterDataText.textContent = 'Master data: synced with Google Sheet' + (when ? ' at ' + when : '');
+    els.masterDataBar.className = 'masterdata-bar ok';
+  } else if(hasStale){
+    els.masterDataText.textContent = 'Master data: showing last saved copy' + (when ? ' (' + when + ')' : '') + ' — sheet unreachable right now';
+    els.masterDataBar.className = 'masterdata-bar stale';
+  } else {
+    els.masterDataText.textContent = 'Master data: partially connected — fill in the remaining URL(s) in CONFIG';
+    els.masterDataBar.className = 'masterdata-bar stale';
+  }
+}
+
+hydrateMasterDataFromCache();
+renderMasterDataStatus();
+
+if(els.btnRefreshMasterData){
+  els.btnRefreshMasterData.addEventListener('click', async ()=>{
+    els.btnRefreshMasterData.disabled = true;
+    await loadMasterData({force:true});
+    els.btnRefreshMasterData.disabled = false;
+    toast('Master data refreshed');
+  });
+}
+
+function activeChannelKey(){
+  return PRODUCT_MASTERS[els.salesChannel.value] ? els.salesChannel.value : DEFAULT_CHANNEL;
+}
+function activeChannelConfig(){
+  return PRODUCT_MASTERS[activeChannelKey()];
+}
+function activeSkus(){
+  return activeChannelConfig().skus;
+}
+function updateMarginFieldsVisibility(){
+  const activeKey = activeChannelKey();
+  Object.keys(PRODUCT_MASTERS).forEach(key=>{
+    const el = document.getElementById(PRODUCT_MASTERS[key].marginFieldsId);
+    if(el) el.hidden = (key !== activeKey);
+  });
+}
+updateMarginFieldsVisibility();
+
+// When the channel changes, the previously selected product no longer
+// applies (it belonged to the old channel's master) — clear the product
+// search and any in-progress order lines so GT and Supplement items are
+// never mixed in the same order.
+els.salesChannel.addEventListener('change', ()=>{
+  els.productSearch.value = '';
+  els.comboResults.innerHTML = ''; els.comboResults.hidden = true;
+  closeAddPanel();
+  if(state.cart.length){
+    state.cart = [];
+    toast('Sales channel changed — order lines were cleared so products from different channels are never mixed.');
+  }
+  updateMarginFieldsVisibility();
+  renderCart();
+  if(state.step===4) renderReview();
+});
+
+function getNextOrderNo(){
+  const today = new Date();
+  const yy = today.getFullYear();
+  const mm = String(today.getMonth()+1).padStart(2,'0');
+  const dd = String(today.getDate()).padStart(2,'0');
+  const dateStr = `${yy}${mm}${dd}`;
+  
+  // Get counter from localStorage
+  let counter = parseInt(localStorage.getItem('orderCounter') || '0', 10);
+  let lastDate = localStorage.getItem('orderDate') || dateStr;
+  
+  // Reset counter if date changed
+  if (lastDate !== dateStr) {
+    counter = 0;
+    localStorage.setItem('orderDate', dateStr);
+  }
+  
+  // Increment counter
+  counter++;
+  localStorage.setItem('orderCounter', counter);
+  
+  return `SO-${dateStr}-${String(counter).padStart(3,'0')}`;
+}
+
+els.orderNo.value = getNextOrderNo();
+
+// Order Number is auto-generated and permanently read-only — there is no
+// manual override. Earlier builds had a "✎ Edit" escape hatch for the
+// known multi-device same-day collision case (two reps on two phones can
+// generate the same SO number), but that added a control non-technical
+// users didn't need to see; the field simply can't be edited now.
+
+// Rep Mobile Number identifies WHO is placing orders from this device, not
+// who the order is for. It's not a Step 1 form field the rep fills in on
+// every order — it's captured ONCE, automatically, via ensureRepMobile()
+// the first time an order is actually submitted from this device, then
+// reused silently for every order after that (see the Submit handler).
+function getRepMobile(){
+  try{ return localStorage.getItem('repMobile') || ''; } catch(e){ return ''; }
+}
+
+function setRepMobile(value){
+  try{ localStorage.setItem('repMobile', value); } catch(e){ /* non-fatal */ }
+}
+
+// Returns a saved 10-digit mobile number, prompting for it (once) if this
+// device doesn't have one yet. Returns '' if the rep cancels the prompt or
+// never enters a valid number — the Submit handler treats that the same
+// as any other missing required field and blocks submission.
+function ensureRepMobile(){
+  const existing = getRepMobile();
+  if(existing) return existing;
+  for(let attempt=0; attempt<3; attempt++){
+    const raw = window.prompt('One-time setup: enter your mobile number so orders sent from this device can be traced back to you. You will not be asked again.');
+    if(raw === null) return ''; // rep cancelled
+    const digitsOnly = raw.replace(/\D/g,'').slice(0,10);
+    if(digitsOnly.length === 10){
+      setRepMobile(digitsOnly);
+      return digitsOnly;
+    }
+    toast('Please enter a valid 10-digit mobile number');
+  }
+  return '';
+}
+
+function toast(msg){
+  els.toast.textContent = msg;
+  els.toast.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>els.toast.classList.remove('show'), 2600);
+}
+
+function locKey(){
+  const v = document.getElementById('location').value;
+  if(v==='all') return 'all';
+  if(v==='bhiwandi') return 'bhiwandi';
+  if(v==='ggn') return 'ggn';
+  return null;
+}
+function locLabel(){
+  const sel = document.getElementById('location');
+  const opt = sel.options[sel.selectedIndex];
+  return opt ? opt.textContent : '';
+}
+
+// ============================================================================
+// PRICING / VALIDATION
+// Inventory/stock checking is disabled for now (will be added back later) —
+// a line is only rejected when the quantity or unit price is invalid.
+//
+// Unit Price (Excluding GST) is entered per line (auto-suggested from MRP
+// and margin, or from the Default Unit Price on the Pricing step, but always
+// editable). Discount is a flat rupee amount taken off that line before GST.
+// ============================================================================
+function suggestedUnitPrice(sku){
+  const cfg = activeChannelConfig();
+  const group = cfg.marginGroupOf(sku);
+  const margin = parseFloat(cfg.marginSelectFor(group).value) || 0;
+  const basePrice = sku.mrp / (1 + GST_RATE);
+  return Math.round(basePrice * (1 - margin) * 100) / 100;
+}
+
+function defaultUnitPriceFor(sku){
+  return suggestedUnitPrice(sku);
+}
+
+// The margin percentage (as a whole number, e.g. 43) currently selected for
+// this SKU's margin group — used to label exported lines as "MARGIN-<pct>".
+function marginPercentFor(sku){
+  const cfg = activeChannelConfig();
+  const group = cfg.marginGroupOf(sku);
+  const margin = parseFloat(cfg.marginSelectFor(group).value) || 0;
+  return Math.round(margin * 100);
+}
+
+// Classifies a line for the DOFSOSKU-style export: if the unit price still
+// matches the standard margin-based price, it's a plain "MARGIN-<pct>" line
+// with no explicit Price. If a rep has manually typed in a different unit
+// price (overriding the suggested one), it's exported as "SPECIAL" with
+// that price carried through.
+function priceTypeFor(sku, unitPrice){
+  const suggested = suggestedUnitPrice(sku);
+  if(Math.abs(unitPrice - suggested) < 0.01){
+    return { priceType: 'MARGIN-' + marginPercentFor(sku), price: '' };
+  }
+  return { priceType: 'SPECIAL', price: unitPrice.toFixed(2) };
+}
+
+function evaluateLine(sku, qty, unitPrice, discount){
+  qty = parseFloat(qty) || 0;
+  unitPrice = parseFloat(unitPrice) || 0;
+  discount = parseFloat(discount) || 0;
+
+  let alert = '';
+  if(qty <= 0 || isNaN(qty)) alert = 'Invalid quantity';
+  else if(qty % sku.casepack !== 0) alert = 'Not a multiple of ' + sku.casepack;
+  else if(!(unitPrice > 0)) alert = 'Unit price must be greater than 0';
+
+  const grossValue = qty * unitPrice;
+  const discountAmt = Math.min(Math.max(discount,0), grossValue);
+  const taxableValue = grossValue - discountAmt;
+  const gstAmount = Math.round(taxableValue * GST_RATE * 100) / 100;
+  const lineTotal = Math.round((taxableValue + gstAmount) * 100) / 100;
+
+  let validation, reason = '';
+  if(alert){
+    validation = 'REJECTED'; reason = alert;
+  } else {
+    validation = 'Accepted';
+  }
+
+  return { grossValue, discountAmt, taxableValue, gstAmount, lineTotal, alert, validation, reason };
+}
+
+function fmtMoney(n){ return '₹' + (n||0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function fmtNum(n){ return (n||0).toLocaleString('en-IN'); }
+
+// ============================================================================
+// PRODUCT SEARCH (combobox)
+// ============================================================================
+function normSpace(str){ return String(str).toLowerCase().replace(/\s+/g,' ').trim(); }
+
+// Safe to drop into an HTML attribute (used for style codes / buyer names
+// that flow from data — either the bundled arrays or a live Google Sheet —
+// into data-* attributes and combo-box markup).
+function escapeAttr(str){ return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+
+// Looks up a product by style code in the CURRENTLY ACTIVE channel's master
+// list. Cart lines and combo-box selections are keyed by style code (never
+// by array index) precisely so this always finds the right product even if
+// activeSkus() was just replaced wholesale by a Google Sheet refresh.
+function findSkuByStyle(style){
+  return activeSkus().find(s => s.style === style);
+}
+
+els.productSearch.addEventListener('input', ()=>{
+  const qRaw = normSpace(els.productSearch.value);
+  if(!qRaw){ els.comboResults.hidden = true; els.comboResults.innerHTML=''; return; }
+  const tokens = qRaw.split(' ').filter(Boolean);
+  const matches = activeSkus()
+    .map((s,i)=>({s,i}))
+    .filter(({s})=>{
+      const haystack = normSpace(s.style) + ' ' + normSpace(s.desc) + ' ' + s.ean;
+      return tokens.every(t => haystack.includes(t));
+    })
+    .slice(0,8);
+
+  if(matches.length===0){
+    els.comboResults.innerHTML = '<div class="combo-empty">No products match your search.</div>';
+  } else {
+    els.comboResults.innerHTML = matches.map(({s})=>{
+      return `<div class="combo-item" data-style="${escapeAttr(s.style)}">
+        <div class="ci-l">
+          <div class="ci-style">${s.style}</div>
+          <div class="ci-desc">${s.desc}</div>
+        </div>
+        <div class="ci-r">
+          <div class="ci-mrp">₹${s.mrp}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  els.comboResults.hidden = false;
+});
+
+els.comboResults.addEventListener('click', (e)=>{
+  const item = e.target.closest('.combo-item');
+  if(!item) return;
+  openAddPanel(item.dataset.style);
+});
+
+// ============================================================================
+// CUSTOMER NAME SEARCH (combobox over known buyers — free text still allowed)
+// ============================================================================
+els.customerName.addEventListener('input', ()=>{
+  const qRaw = normSpace(els.customerName.value);
+  if(!qRaw){ els.buyerResults.hidden = true; els.buyerResults.innerHTML=''; return; }
+  const tokens = qRaw.split(' ').filter(Boolean);
+  const matches = BUYERS.filter(b => {
+    const haystack = normSpace(b);
+    return tokens.every(t => haystack.includes(t));
+  }).slice(0,8);
+
+  if(matches.length===0){
+    // Show what the user actually typed (qRaw is lowercased/space-collapsed
+    // for matching only) — the order itself always uses the real field
+    // value, this message just shouldn't visually mangle their input.
+    const typedName = escapeAttr(els.customerName.value.trim());
+    els.buyerResults.innerHTML = '<div class="combo-empty new-customer">✓ <b>"'+typedName+'"</b> will be included as a new customer for this order — add it to your Customer Master sheet so it appears in search next time.</div>';
+  } else {
+    els.buyerResults.innerHTML = matches.map(b =>
+      `<div class="combo-item" data-buyer="${b.replace(/"/g,'&quot;')}"><div class="ci-l"><div class="ci-style">${b}</div></div></div>`
+    ).join('');
+  }
+  els.buyerResults.hidden = false;
+});
+
+els.buyerResults.addEventListener('click', (e)=>{
+  const item = e.target.closest('.combo-item');
+  if(!item || !item.dataset.buyer) return;
+  els.customerName.value = item.dataset.buyer;
+  els.buyerResults.hidden = true;
+  if(state.step===4) renderReview();
+});
+
+document.addEventListener('click', (e)=>{
+  if(!e.target.closest('.combo')){ els.comboResults.hidden = true; els.buyerResults.hidden = true; }
+});
+
+function openAddPanel(style){
+  const s = findSkuByStyle(style);
+  if(!s){ toast('That product is no longer in the current master data — try searching again.'); return; }
+  const existing = state.cart.find(c=>c.style===s.style);
+  const defaultQty = existing ? existing.qty : s.casepack;
+  const defaultPrice = existing ? existing.unitPrice : defaultUnitPriceFor(s);
+  const defaultDiscount = existing ? existing.discount : 0;
+  els.comboResults.hidden = true;
+  els.productSearch.value = '';
+
+  els.addPanel.hidden = false;
+  els.addPanel.innerHTML = `
+    <div class="ap-title">${s.style} — ${s.desc}</div>
+    <div class="ap-desc">MRP ₹${s.mrp} · Case pack ${s.casepack} · ${s.brand ? 'Brand '+s.brand : 'Category '+(s.category||'—')}</div>
+    <div class="qty-stepper">
+      <button type="button" id="apMinus">−</button>
+      <input type="number" id="apQty" value="${defaultQty}" min="0">
+      <button type="button" id="apPlus">+</button>
+    </div>
+    <div class="qty-note" id="apNote"></div>
+    <div class="grid2" style="margin-top:8px;">
+      <div class="field" style="margin-bottom:0;">
+        <label>Unit Price (Excl. GST)</label>
+        <input type="number" id="apPrice" step="0.01" min="0" value="${defaultPrice}">
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Discount (₹)</label>
+        <input type="number" id="apDiscount" step="0.01" min="0" value="${defaultDiscount}">
+      </div>
+    </div>
+    <div class="ap-preview" id="apPreview"></div>
+    <div class="ap-actions">
+      <button class="btn btn-outline" id="apCancel" style="flex:0 0 96px;">Cancel</button>
+      <button class="btn btn-primary" id="apAdd">${existing? 'Update Line':'Add to Order'}</button>
+    </div>
+  `;
+
+  const qtyInput = document.getElementById('apQty');
+  const priceInput = document.getElementById('apPrice');
+  const discountInput = document.getElementById('apDiscount');
+  const note = document.getElementById('apNote');
+  const preview = document.getElementById('apPreview');
+
+  function refresh(){
+    const qty = parseFloat(qtyInput.value) || 0;
+    const price = parseFloat(priceInput.value) || 0;
+    const discount = parseFloat(discountInput.value) || 0;
+    const r = evaluateLine(s, qty, price, discount);
+    if(qty>0 && qty % s.casepack === 0){
+      note.className='qty-note ok'; note.textContent = `✓ Valid — ${qty/s.casepack} case(s) of ${s.casepack}`;
+    } else if(qty>0){
+      note.className='qty-note warn'; note.textContent = `⚠ Not a multiple of ${s.casepack} — will be rejected`;
+    } else {
+      note.className='qty-note warn'; note.textContent = `Enter a quantity`;
+    }
+    preview.innerHTML = `Taxable <b>₹${r.taxableValue.toFixed(2)}</b> · GST <b>₹${r.gstAmount.toFixed(2)}</b> · Line Total <b>${fmtMoney(r.lineTotal)}</b>`;
+  }
+  refresh();
+  qtyInput.addEventListener('input', refresh);
+  priceInput.addEventListener('input', refresh);
+  discountInput.addEventListener('input', refresh);
+  document.getElementById('apMinus').addEventListener('click', ()=>{
+    qtyInput.value = Math.max(0, (parseFloat(qtyInput.value)||0) - s.casepack); refresh();
+  });
+  document.getElementById('apPlus').addEventListener('click', ()=>{
+    qtyInput.value = (parseFloat(qtyInput.value)||0) + s.casepack; refresh();
+  });
+  document.getElementById('apCancel').addEventListener('click', closeAddPanel);
+  document.getElementById('apAdd').addEventListener('click', ()=>{
+    const qty = parseFloat(qtyInput.value) || 0;
+    const price = parseFloat(priceInput.value) || 0;
+    const discount = parseFloat(discountInput.value) || 0;
+    if(qty<=0){ toast('Enter a quantity greater than 0'); return; }
+    if(!(price>0)){ toast('Enter a unit price greater than 0'); return; }
+    if(existing){ existing.qty = qty; existing.unitPrice = price; existing.discount = discount; }
+    else { state.cart.push({style: s.style, qty, unitPrice: price, discount}); }
+    closeAddPanel();
+    renderCart();
+    toast(existing? 'Line updated' : `${s.style} added to order`);
+  });
+}
+function closeAddPanel(){ els.addPanel.hidden = true; els.addPanel.innerHTML=''; }
+
+// ============================================================================
+// CART RENDERING
+// ============================================================================
+function computeCartLines(){
+  // A line's product can vanish from the active master (e.g. discontinued
+  // in a Google Sheet refresh, or a leftover line from before a sales
+  // channel switch) — skip it defensively rather than crashing the render.
+  return state.cart
+    .map(c=>{
+      const s = findSkuByStyle(c.style);
+      if(!s) return null;
+      const r = evaluateLine(s, c.qty, c.unitPrice, c.discount);
+      return { ...c, sku:s, ...r };
+    })
+    .filter(Boolean);
+}
+
+function renderCart(){
+  const lines = computeCartLines();
+  els.cartCount.textContent = lines.length;
+
+  if(lines.length===0){
+    els.cartList.innerHTML = '<div class="cart-empty">No products added yet — search above to add your first item.</div>';
+  } else {
+    els.cartList.innerHTML = lines.map(l => cartItemHtml(l)).join('');
+  }
+
+  const acceptedLines = lines.filter(l=>l.validation==='Accepted');
+  const totalQty = lines.reduce((a,l)=>a+l.qty,0);
+  const totalBeforeGst = acceptedLines.reduce((a,l)=>a + l.grossValue, 0);
+  const totalDiscount = acceptedLines.reduce((a,l)=>a + l.discountAmt, 0);
+  const totalGst = acceptedLines.reduce((a,l)=>a + l.gstAmount, 0);
+  const netOrderValue = totalBeforeGst - totalDiscount + totalGst;
+  const accepted = acceptedLines.length;
+  const rejected = lines.filter(l=>l.validation==='REJECTED').length;
+
+  els.msLines.textContent = lines.length;
+  els.msAccepted.textContent = accepted;
+  els.msRejected.textContent = rejected;
+  els.msValue.textContent = netOrderValue.toLocaleString('en-IN', {maximumFractionDigits:0});
+
+  return { lines, totalQty, totalBeforeGst, totalDiscount, totalGst, netOrderValue, accepted, rejected };
+}
+
+function cartItemHtml(l){
+  const badgeClass = l.validation==='Accepted' ? 'ok' : 'bad';
+  const styleAttr = escapeAttr(l.style);
+  return `<div class="cart-item ${l.validation==='Accepted'?'accepted':'rejected'}" data-style="${styleAttr}">
+    <div style="flex:1; min-width:0;">
+      <div class="ci-name">${l.sku.style} — ${l.sku.desc}</div>
+      <div class="ci-sub">₹${l.sku.mrp} MRP · Case ${l.sku.casepack} · ${locLabel()||'—'}</div>
+      <div class="ci-fields">
+        <div><label>Qty</label><input type="number" class="mini-qty" value="${l.qty}" data-style="${styleAttr}"></div>
+        <div><label>Unit Price</label><input type="number" step="0.01" class="mini-price" value="${l.unitPrice}" data-style="${styleAttr}"></div>
+        <div><label>Discount ₹</label><input type="number" step="0.01" class="mini-discount" value="${l.discount||0}" data-style="${styleAttr}"></div>
+      </div>
+      <div class="ci-calc">
+        <span>GST ₹${l.gstAmount.toFixed(2)}</span>
+        <span class="ci-value">Total ${fmtMoney(l.lineTotal)}</span>
+        <span class="ci-badge ${badgeClass}">${l.validation}</span>
+      </div>
+      ${l.reason ? `<div class="ci-reason">⚠ ${l.reason}</div>` : ''}
+    </div>
+    <button class="ci-remove" data-remove="${styleAttr}">✕</button>
+  </div>`;
+}
+
+document.addEventListener('input', (e)=>{
+  const style = e.target.dataset.style;
+  if(!style) return;
+  const c = state.cart.find(c=>c.style===style);
+  if(!c) return;
+  if(e.target.classList.contains('mini-qty')){ c.qty = parseFloat(e.target.value)||0; }
+  else if(e.target.classList.contains('mini-price')){ c.unitPrice = parseFloat(e.target.value)||0; }
+  else if(e.target.classList.contains('mini-discount')){ c.discount = parseFloat(e.target.value)||0; }
+  else return;
+  renderCart(); if(state.step===4) renderReview();
+});
+document.addEventListener('click', (e)=>{
+  const rm = e.target.closest('[data-remove]');
+  if(rm){
+    const style = rm.dataset.remove;
+    state.cart = state.cart.filter(c=>c.style!==style);
+    renderCart();
+    if(state.step===4) renderReview();
+  }
+});
+
+[document.getElementById('location'), els.marginMF, els.marginPF, els.marginPB, els.marginNONPB].forEach(el=>{
+  el.addEventListener('input', ()=>{ renderCart(); if(state.step===4) renderReview(); });
+  el.addEventListener('change', ()=>{ renderCart(); if(state.step===4) renderReview(); });
+});
+
+// ============================================================================
+// REVIEW STEP
+// ============================================================================
+function renderReview(){
+  const { lines, totalBeforeGst, totalDiscount, totalGst, netOrderValue, accepted, rejected } = renderCart();
+
+  els.rvLines.textContent = lines.length;
+  els.rvAccepted.textContent = accepted;
+  els.rvRejected.textContent = rejected;
+  els.rvBeforeGst.textContent = fmtMoney(totalBeforeGst);
+  els.rvDiscount.textContent = fmtMoney(totalDiscount);
+  els.rvGst.textContent = fmtMoney(totalGst);
+  els.rvTotalValue.textContent = fmtMoney(netOrderValue);
+
+  const rejectedLines = lines.filter(l=>l.validation==='REJECTED');
+  els.rejectList.innerHTML = rejectedLines.length===0 ? '' : rejectedLines.map(l =>
+    `<div class="reject-row"><b>${l.sku.style}</b> — ${l.sku.desc}: ${l.reason}</div>`
+  ).join('');
+
+  els.reviewCartList.innerHTML = lines.length===0
+    ? '<div class="cart-empty">No products added yet.</div>'
+    : lines.map(l=>cartItemHtml(l)).join('');
+
+  els.recapDetails.innerHTML = [
+    ['Order Number', els.orderNo.value || '—'],
+    ['Customer Name', els.customerName.value || '—'],
+    ['Sales Channel', els.salesChannel.value || '—'],
+    ['Location', locLabel() || '—'],
+  ].map(([k,v])=>`<div class="rr"><span>${k}</span><span>${v}</span></div>`).join('');
+
+  const statusEl = els.statusLine;
+  if(lines.length===0){
+    statusEl.className='status-line empty'; statusEl.textContent='NO PRODUCTS ADDED — build your order in step 3';
+  } else if(!els.customerName.value || !els.salesChannel.value){
+    statusEl.className='status-line warn'; statusEl.textContent='INCOMPLETE — enter Customer Name and Sales Channel';
+  } else if(rejected>0){
+    statusEl.className='status-line warn'; statusEl.textContent=`${rejected} LINE(S) REJECTED — review reasons above before sending`;
+  } else {
+    statusEl.className='status-line ready'; statusEl.textContent='READY TO SUBMIT — all lines passed validation';
+  }
+}
+
+function updateSheetStatus(){
+  const on = !!SHEET_WEBAPP_URL;
+  els.sheetStatus.textContent = on ? 'Sheet sync: connected' : 'Sheet sync: not configured';
+  els.sheetStatus.className = 'sheet-status ' + (on ? 'on' : 'off');
+}
+
+// ============================================================================
+// STEP NAVIGATION
+// ============================================================================
+function goToStep(n){
+  state.step = n;
+  document.querySelectorAll('.panel-step').forEach(p=>p.hidden = true);
+  document.getElementById('step-'+n).hidden = false;
+  document.querySelectorAll('.step').forEach(s=>{
+    const sn = parseInt(s.dataset.step,10);
+    s.classList.toggle('active', sn===n);
+    s.classList.toggle('done', sn<n);
+  });
+  els.navInfo.textContent = `Step ${n} / 4`;
+  els.btnBack.disabled = (n===1);
+  els.btnNext.textContent = (n===4) ? 'Done ✓' : 'Next ›';
+  els.btnNext.hidden = (n===4);
+  if(n===4) renderReview();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+// Shared by validateAllSteps() (used on Submit) and the Next button's
+// per-step check below, so the "which fields count as required right now"
+// rule only has to live in one place.
+function validateRequiredFieldsIn(stepEl){
+  const requiredFields = stepEl.querySelectorAll('[required]');
+  let firstInvalid = null;
+  requiredFields.forEach(field=>{
+    // Margin fields belonging to the sales channel that ISN'T currently
+    // selected are hidden and irrelevant — don't block on those.
+    if(field.closest('[hidden]')) return;
+    const empty = !field.value || String(field.value).trim()==='';
+    field.style.borderColor = empty ? 'var(--red-text)' : '';
+    if(empty && !firstInvalid) firstInvalid = field;
+  });
+  return firstInvalid;
+}
+
+// Validates every required field across ALL steps (Order Details + Pricing),
+// not just whichever step is currently open. This matters because the
+// stepper tabs at the top let a user jump straight to Review (step 4)
+// without ever passing through btnNext's per-step check below — without
+// this, Submit could fire with a blank customer name, sales channel, etc.
+function validateAllSteps(){
+  for(let step=1; step<=2; step++){
+    const invalid = validateRequiredFieldsIn(document.getElementById('step-'+step));
+    if(invalid) return {ok:false, field:invalid};
+  }
+  return {ok:true};
+}
+
+function jumpToInvalidField(field){
+  const stepEl = field.closest('.panel-step');
+  const stepNum = stepEl ? parseInt(stepEl.id.replace('step-',''),10) : 1;
+  goToStep(stepNum);
+  field.style.borderColor = 'var(--red-text)';
+  field.focus();
+}
+
+document.getElementById('btnNext').addEventListener('click', ()=>{
+  if(state.step>=4) return;
+  const currentStep = document.getElementById('step-'+state.step);
+  const invalid = validateRequiredFieldsIn(currentStep);
+  if(invalid){
+    toast('Please fill in all required fields');
+    invalid.focus();
+  } else {
+    goToStep(state.step+1);
+  }
+});
+document.getElementById('btnBack').addEventListener('click', ()=>{
+  if(state.step>1) goToStep(state.step-1);
+});
+document.querySelectorAll('.step').forEach(s=>{
+  s.addEventListener('click', ()=> goToStep(parseInt(s.dataset.step,10)));
+});
+document.querySelectorAll('.edit-link').forEach(el=>{
+  el.addEventListener('click', ()=> goToStep(parseInt(el.dataset.goto,10)));
+});
+
+// ============================================================================
+// ORDER FILE / MESSAGE GENERATION
+// ============================================================================
+function buildOrderPayload(){
+  const lines = computeCartLines();
+  const accepted = lines.filter(l=>l.validation==='Accepted');
+  const totalBeforeGst = accepted.reduce((a,l)=>a+l.grossValue,0);
+  const totalDiscount = accepted.reduce((a,l)=>a+l.discountAmt,0);
+  const totalGst = accepted.reduce((a,l)=>a+l.gstAmount,0);
+  const netOrderValue = totalBeforeGst - totalDiscount + totalGst;
+
+  return {
+    orderNo: els.orderNo.value, customerName: els.customerName.value, salesChannel: els.salesChannel.value,
+    location: locLabel(), repMobile: getRepMobile(), shipAddr: els.shipAddr.value,
+    totalBeforeGst: totalBeforeGst.toFixed(2), totalDiscount: totalDiscount.toFixed(2),
+    totalGst: totalGst.toFixed(2), netOrderValue: netOrderValue.toFixed(2),
+    lines: lines.map(l=>{
+      const pt = priceTypeFor(l.sku, l.unitPrice);
+      return {
+        style:l.sku.style, desc:l.sku.desc, ean:l.sku.ean, qty:l.qty,
+        unitPrice:l.unitPrice.toFixed(2), discount:l.discountAmt.toFixed(2),
+        gstAmount:l.gstAmount.toFixed(2), lineTotal:l.lineTotal.toFixed(2),
+        validation:l.validation, reason:l.reason||'',
+        priceType: pt.priceType, exportPrice: pt.price   // used by the DOFSOSKU-format CSV export
+      };
+    })
+  };
+}
+
+// RFC 4180: only wrap a field in quotes when it actually needs it (contains
+// a comma, a double-quote, or a line break). Quoting every single field —
+// including plain numbers and codes that could never contain a comma — is
+// what made some mobile "quick view" CSV viewers show the literal quote
+// characters instead of treating them as delimiters and stripping them.
+function csvField(v){
+  const s = (v===undefined || v===null) ? '' : String(v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+
+// DOFSOSKU-style export: Scan Identifier (EAN), Ordered Qty, Price Type,
+// Price, PO Qty. Only Accepted lines go in — a rejected line (bad qty/price)
+// isn't something a downstream order/PO system should ever receive; it stays
+// visible in the on-screen Review step and the WhatsApp message instead.
+// PO Qty has no separate field in this form, so it mirrors Ordered Qty.
+function buildCsvBlob(payload){
+  const rows = [['Scan Identifier','Ordered Qty','Price Type','Price','PO Qty']];
+  payload.lines.filter(l=>l.validation==='Accepted').forEach(l=>{
+    rows.push([l.ean, l.qty, l.priceType, l.exportPrice, l.qty]);
+  });
+  // CRLF line endings are the RFC 4180 standard and several strict mobile
+  // CSV/Excel viewers only lay data out into proper columns when they see
+  // \r\n rather than a bare \n. Prefixing a UTF-8 BOM (via the
+  // escape below) makes those same apps detect the encoding correctly
+  // instead of guessing wrong and showing the raw text as one unsplit column.
+  const csv = rows.map(r=>r.map(csvField).join(',')).join('\r\n');
+  return new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});
+}
+
+// Turns a customer name into a filesystem-safe filename fragment (strips
+// characters that break on common OSes, collapses whitespace to underscores).
+function safeFileNamePart(s){
+  return String(s||'Customer').trim().replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,'_') || 'Customer';
+}
+
+function orderFileName(payload){
+  return `${safeFileNamePart(payload.customerName)}_${payload.orderNo||'order'}.csv`;
+}
+
+function buildWhatsAppMessage(payload){
+  const accepted = payload.lines.filter(l=>l.validation==='Accepted');
+  const rejected = payload.lines.filter(l=>l.validation==='REJECTED');
+
+  let msg = `🧾 *MyFitness Order Booking*\n`;
+  msg += `Order No: ${payload.orderNo||'-'}\n`;
+  msg += `Customer: ${payload.customerName||'-'}\n`;
+  msg += `Sales Channel: ${payload.salesChannel||'-'}\n`;
+  msg += `Location: ${payload.location||'-'}\n`;
+  if(payload.submittedAt) msg += `Date/Time: ${formatHistoryDate(payload.submittedAt)}\n`;
+  if(payload.repMobile) msg += `Submitted By: ${payload.repMobile}\n`;
+  msg += `\n`;
+  msg += `Lines: ${payload.lines.length} | Accepted: ${accepted.length} | Rejected: ${rejected.length}\n\n`;
+  msg += `*Items:*\n`;
+  payload.lines.forEach((l,i)=>{
+    msg += `${i+1}. ${l.style} - ${l.desc} | Qty: ${l.qty} | Rate ₹${l.unitPrice}`;
+    if(parseFloat(l.discount)>0) msg += ` | Disc ₹${l.discount}`;
+    msg += ` | GST ₹${l.gstAmount} | Total ₹${l.lineTotal}${l.validation==='REJECTED' ? ' ⚠ REJECTED':''}\n`;
+  });
+  msg += `\n*Total Order Value (Before GST): ₹${payload.totalBeforeGst}*\n`;
+  msg += `*Total Discount Given: ₹${payload.totalDiscount}*\n`;
+  msg += `*Total GST Amount: ₹${payload.totalGst}*\n`;
+  msg += `*Net Order Value (Final Payable): ₹${payload.netOrderValue}*\n`;
+  if(rejected.length){
+    msg += `\n⚠️ Rejected Lines:\n`;
+    rejected.forEach(l=> msg += `- ${l.style}: ${l.reason}\n`);
+  }
+  msg += `\nGenerated via MyFitness Order Booking Form`;
+  return msg;
+}
+
+// "Send yourself a copy" — lets the rep get the exact same item/SKU/total
+// message that just went to the customer/order-processing team, sent to
+// their OWN WhatsApp instead, purely for their personal reference/record.
+// Deliberately a real button tap rather than a second WhatsApp chat opened
+// automatically right after the first: browsers can (and on several
+// Android/iOS combinations do) block a second window.open() that follows
+// an awaited operation, treating it as an unrequested popup rather than a
+// user-initiated one. A genuine click here always opens reliably.
+// Holds the exact message + rep number for whichever order was most
+// recently submitted, so the button (tapped a few seconds later, once the
+// rep is back from WhatsApp) always sends a copy of THAT order, not
+// whatever's currently half-typed into the form for the next one.
+let selfCopyMessage = '';
+let selfCopyRepMobile = '';
+
+function showSelfCopyBanner(message, repMobile){
+  selfCopyMessage = message;
+  selfCopyRepMobile = repMobile;
+  if(els.selfCopyBanner) els.selfCopyBanner.classList.remove('hidden');
+}
+
+function hideSelfCopyBanner(){
+  if(els.selfCopyBanner) els.selfCopyBanner.classList.add('hidden');
+}
+
+// Indian mobile numbers only (matches WHATSAPP_NUMBER's existing "91 +
+// 10 digits" convention elsewhere in this file) — repMobile is stored as a
+// bare 10-digit number (see ensureRepMobile()), so the country code is
+// added here rather than asked of the rep a second time.
+els.btnSendSelfCopy.addEventListener('click', ()=>{
+  if(!selfCopyRepMobile){ hideSelfCopyBanner(); return; }
+  const waUrl = `https://wa.me/91${selfCopyRepMobile}?text=${encodeURIComponent(selfCopyMessage)}`;
+  window.open(waUrl, '_blank');
+  hideSelfCopyBanner();
+});
+
+els.btnDismissSelfCopy.addEventListener('click', hideSelfCopyBanner);
+
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function postToSheet(payload){
+  if(!SHEET_WEBAPP_URL) return {skipped:true};
+  const res = await fetch(SHEET_WEBAPP_URL, { method:'POST', body: JSON.stringify(payload) });
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  return res.json().catch(()=>({}));
+}
+
+// ============================================================================
+// ACTIONS
+// ============================================================================
+document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
+  // Guard #1: ignore a second tap that lands while the first submission is
+  // still in flight (network round-trip to the sheet, native share sheet, etc).
+  if(state.isSubmitting) return;
+
+  // Guard #2: every required field, across every step — not just the one
+  // currently on screen. A user can jump straight to Review via the stepper
+  // tabs, bypassing btnNext's per-step check, so Submit re-checks everything.
+  const fieldCheck = validateAllSteps();
+  if(!fieldCheck.ok){
+    toast('Please fill in all required fields before submitting');
+    jumpToInvalidField(fieldCheck.field);
+    return;
+  }
+
+  const payload = buildOrderPayload();
+  if(payload.lines.length===0){
+    toast('Add at least one product before submitting');
+    goToStep(3);
+    return;
+  }
+  if(!payload.lines.some(l=>l.validation==='Accepted')){
+    // Every line is rejected (bad qty/price) — the export only ever
+    // contains Accepted lines, so there'd be nothing but a header row.
+    toast('Every product line is rejected — fix them before submitting');
+    goToStep(3);
+    return;
+  }
+
+  // Guard #3: the same order can't be submitted twice — UNLESS this is a
+  // deliberate edit of that exact order (state.editingOrderNo set by
+  // "✎ Edit This Order" in Order History), in which case re-submitting the
+  // same Order No is the whole point. Checked against both this session's
+  // memory and localStorage, so it still holds after a refresh (e.g. the
+  // sales rep tapping Submit again by mistake).
+  const isEditingThisOrder = state.editingOrderNo && state.editingOrderNo === payload.orderNo;
+  if(state.submittedOrderNos.has(payload.orderNo) && !isEditingThisOrder){
+    toast(`Order ${payload.orderNo} was already submitted — start a new order to send another.`);
+    return;
+  }
+
+  // Guard #4: capture the rep's mobile number, once ever, right here at the
+  // moment of submission — not as a Step 1 field the rep has to fill in on
+  // every order. Already-captured devices skip straight through silently;
+  // this only prompts the very first time an order goes out from a phone.
+  const repMobile = ensureRepMobile();
+  if(!repMobile){
+    toast('Mobile number is required to submit an order');
+    return;
+  }
+  payload.repMobile = repMobile;
+
+  // Stamp the exact submit time now, once, so the Order History sheet, the
+  // WhatsApp message, and this device's local Order History all agree on
+  // the same timestamp for this order rather than each computing "now"
+  // separately a few hundred milliseconds apart.
+  payload.submittedAt = new Date().toISOString();
+
+  // Confirmation step: the wizard's own Review screen already lays out
+  // every line and the totals, so this is a short final checkpoint (not a
+  // re-review) before anything actually goes out over WhatsApp/the sheet —
+  // closes the gap between "Review" and "Send" for a one-tap button.
+  const accepted = payload.lines.filter(l=>l.validation==='Accepted').length;
+  const rejected = payload.lines.filter(l=>l.validation==='REJECTED').length;
+  const confirmMsg =
+    (isEditingThisOrder ? `Update this order via WhatsApp?\n\n` : `Send this order via WhatsApp?\n\n`) +
+    `Order No: ${payload.orderNo}\n` +
+    `Customer: ${payload.customerName}\n` +
+    `Lines: ${payload.lines.length} (${accepted} accepted${rejected? ', '+rejected+' rejected':''})\n` +
+    `Net Order Value: ₹${payload.netOrderValue}`;
+  if(!confirm(confirmMsg)) return;
+
+  state.isSubmitting = true;
+  const btn = document.getElementById('btnSubmitWA');
+  const original = btn.textContent;
+  btn.textContent = 'Submitting…'; btn.disabled = true;
+
+  // Step A: record this order as submitted BEFORE handing off to WhatsApp's
+  // native share sheet below — deliberately in this order, not after.
+  // Tapping Share hands control to the OS; on a lot of Android phones that
+  // backgrounds (and on low-memory phones, can even get the browser tab/PWA
+  // killed while WhatsApp is in the foreground). Anything that only ran
+  // *after* navigator.share() resolved could silently never run at all —
+  // which is exactly why a submitted order could go out over WhatsApp fine
+  // and still never show up in Order History. Recording it here, first,
+  // means the order is already safely logged (duplicate-guard, the local
+  // Order History list, and the Order History Google Sheet) before that
+  // handoff happens, regardless of what the OS does with the share sheet
+  // afterward.
+  // Only record the order number as "submitted" if it isn't already —
+  // editing an existing order re-submits an Order No that's already in
+  // this set, and pushing it again would just pile up a harmless but
+  // pointless duplicate string in localStorage.
+  if(!state.submittedOrderNos.has(payload.orderNo)){
+    state.submittedOrderNos.add(payload.orderNo);
+    try{
+      const stored = JSON.parse(localStorage.getItem('submittedOrderNos') || '[]');
+      stored.push(payload.orderNo);
+      localStorage.setItem('submittedOrderNos', JSON.stringify(stored.slice(-200)));
+    } catch(e){ /* localStorage unavailable — in-memory guard above still holds for this session */ }
+  }
+  // saveOrderHistoryEntry() itself looks for an existing entry with this
+  // same Order No and replaces it rather than adding a second one — see
+  // that function below. This is what makes editing update the existing
+  // Order History record instead of creating a duplicate Order ID.
+  saveOrderHistoryEntry(payload);
+
+  // Step B: save to the Order History Google Sheet (the "transaction
+  // table" — see the Apps Script setup guide). This never blocks the
+  // WhatsApp send below — a rep in the field with no signal should still
+  // be able to get their order out — but its outcome is reflected in the
+  // final success message.
+  let sheetOk = true;
+  try{ await postToSheet(payload); } catch(err){ sheetOk = false; console.error('Sheet sync failed', err); }
+
+  // Step C: open WhatsApp with the order details (native share sheet on
+  // mobile when available, otherwise a CSV download + wa.me link). This
+  // runs LAST, on purpose — see the comment on Step A above.
+  const message = buildWhatsAppMessage(payload);
+  const csvBlob = buildCsvBlob(payload);
+  const fileName = orderFileName(payload);
+
+  try{
+    const file = new File([csvBlob], fileName, {type:'text/csv'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({ files:[file], text: message, title:'MyFitness Order' });
+    } else {
+      downloadBlob(csvBlob, fileName);
+      const waUrl = WHATSAPP_NUMBER
+        ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+      window.open(waUrl, '_blank');
+    }
+  } catch(err){
+    if(err && err.name === 'AbortError'){
+      // user cancelled the native share sheet — the order still counts as
+      // submitted, matching the original behaviour (it's already recorded
+      // in Step A above regardless of what happens here).
+    } else {
+      console.error(err);
+      downloadBlob(csvBlob, fileName);
+      const waUrl = WHATSAPP_NUMBER
+        ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+      window.open(waUrl, '_blank');
+    }
+  }
+
+  btn.textContent = original; btn.disabled = false;
+  state.isSubmitting = false;
+
+  // Step D: reset the form for the next entry (this also clears
+  // state.editingOrderNo and hides the "Editing an existing order" banner
+  // — see resetForm()), then show a success message on the now-fresh
+  // Step 1 so it reads clearly against the order that just went out.
+  const submittedOrderNo = payload.orderNo;
+  const verb = isEditingThisOrder ? 'updated' : 'submitted';
+  resetForm();
+  toast(sheetOk
+    ? `✅ Order ${submittedOrderNo} ${verb} successfully`
+    : `✅ Order ${submittedOrderNo} sent — sheet sync failed, but WhatsApp/CSV went out`);
+  // Offer the rep their own copy of the exact same item/SKU/total details,
+  // on WhatsApp, for personal reference — see showSelfCopyBanner() above
+  // for why this is a tap-to-send button rather than an auto-opened
+  // second WhatsApp chat.
+  showSelfCopyBanner(message, payload.repMobile);
+});
+
+document.getElementById('btnExport').addEventListener('click', ()=>{
+  const payload = buildOrderPayload();
+  if(payload.lines.length===0){ toast('No order lines to export'); return; }
+  if(!payload.lines.some(l=>l.validation==='Accepted')){
+    toast('Every product line is rejected — nothing valid to export');
+    return;
+  }
+  const blob = buildCsvBlob(payload);
+  downloadBlob(blob, orderFileName(payload));
+});
+
+document.getElementById('btnPrint').addEventListener('click', ()=> window.print());
+
+document.getElementById('btnEmail').addEventListener('click', ()=>{
+  const payload = buildOrderPayload();
+  if(payload.lines.length===0){ toast('Add at least one product first'); return; }
+  const message = buildWhatsAppMessage(payload).replace(/\*/g,'');
+  const subject = `MyFitness Order ${payload.orderNo||''} - ${payload.customerName||''}`;
+  window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
+});
+
+// Shared by the manual "Start New Order" button and the automatic reset
+// that runs right after a successful Submit.
+function resetForm(){
+  state.cart = [];
+  state.editingOrderNo = null;
+  if(els.editingBanner) els.editingBanner.classList.add('hidden');
+  // Clears out any leftover "send yourself a copy" banner from a PREVIOUS
+  // order — the submit handler shows it again, for the order that was
+  // just sent, right after this reset runs.
+  hideSelfCopyBanner();
+  els.orderNo.value = getNextOrderNo();
+  els.customerName.value=''; els.shipAddr.value='';
+  els.salesChannel.value='';
+  els.productSearch.value = ''; els.comboResults.innerHTML=''; els.comboResults.hidden = true;
+  closeAddPanel();
+  updateMarginFieldsVisibility();
+  renderCart();
+  goToStep(1);
+  // Customer Name is the first thing a rep fills in for every new order —
+  // put the cursor there so they can start typing immediately.
+  els.customerName.focus();
+  // Best-effort background refresh so a new order starts against the
+  // latest customers/products/prices from the Google Sheet. Throttled by
+  // MASTER_DATA_CACHE_MINUTES internally, and never blocks the UI reset
+  // above — loadMasterData() swallows its own errors per tab.
+  loadMasterData();
+}
+
+document.getElementById('btnReset').addEventListener('click', ()=>{
+  if(!confirm('Start a new order? This clears all current details and order lines.')) return;
+  resetForm();
+});
+
+els.btnCancelEdit.addEventListener('click', ()=>{
+  if(!confirm('Cancel editing this order? Any changes you made will be discarded — the original order is unaffected.')) return;
+  resetForm();
+  toast('Edit cancelled — back to a new order.');
+});
+
+// ============================================================================
+// ORDER HISTORY — browse previously submitted orders on this device.
+//
+// This is deliberately device-local (localStorage), not a read-back from the
+// Order History Google Sheet: postToSheet() only ever writes to that sheet,
+// there's no read API wired up (and wiring one would need the Apps Script
+// webapp to support GET + return data, which is a bigger, separate change).
+// A local history needs zero extra setup and works offline, which matches
+// how the rest of this app is built for non-technical, often-offline sales
+// reps. It's capped at the last 200 orders (same cap as submittedOrderNos)
+// so it can never grow without bound.
+//
+// Every entry is the exact payload that was sent out (buildOrderPayload()),
+// plus a submittedAt timestamp — so "view a previous order" shows the real
+// order that went out, not a live re-computation that could drift if
+// products/prices change later.
+const ORDER_HISTORY_KEY = 'orderHistory';
+const ORDER_HISTORY_MAX = 200;
+
+function loadOrderHistory(){
+  try{ return JSON.parse(localStorage.getItem(ORDER_HISTORY_KEY) || '[]'); }
+  catch(e){ return []; }
+}
+
+function saveOrderHistoryEntry(payload){
+  try{
+    const list = loadOrderHistory();
+    // If this Order No is already in the history (this is an edit-resubmit,
+    // not a brand new order), drop the old record and add the fresh one at
+    // the end — this is what makes editing UPDATE the existing history
+    // entry instead of appending a second one with the same Order No.
+    const existingIdx = payload.orderNo ? list.findIndex(o => o.orderNo === payload.orderNo) : -1;
+    if(existingIdx !== -1) list.splice(existingIdx, 1);
+    // payload.submittedAt is stamped once in the Submit handler, right
+    // before this and postToSheet() are both called, so the local history
+    // and the Order History sheet always agree on the same timestamp for a
+    // given order. The fallback here only matters if this is ever called
+    // from somewhere that skipped that step.
+    list.push({ ...payload, submittedAt: payload.submittedAt || new Date().toISOString() });
+    localStorage.setItem(ORDER_HISTORY_KEY, JSON.stringify(list.slice(-ORDER_HISTORY_MAX)));
+  } catch(e){ /* localStorage unavailable — history just won't be there this session */ }
+}
+
+// historyView.mode is 'list' | 'detail' | 'summary'. historyView.index is
+// the position in the (oldest→newest) history array shown in detail mode.
+// historyView.cameFrom remembers whether detail was opened from the flat
+// list or from a calendar day in Summary, so "‹ Back" returns to whichever
+// one the rep actually came from instead of always landing on the list.
+// historyView.calYearMonth / historyView.calSelectedDate / historyView.report
+// are Summary-tab-only state (which month the calendar shows, which day is
+// drilled into, and which of the 4 report views is active).
+const historyView = {
+  mode:'list', index:-1, cameFrom:'list',
+  calYearMonth:null, calSelectedDate:null, report:'total'
+};
+
+// Full HTML-text escaping (unlike escapeAttr above, which only covers the
+// & and " needed inside a quoted attribute) — used here because customer
+// names and product descriptions are free text that could contain < or >,
+// and this is the one place in the app that renders them as HTML content
+// rather than as an attribute value or a plain input's .value.
+function escapeHtml(str){
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function formatHistoryDate(iso){
+  try{
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined,{day:'2-digit',month:'short',year:'numeric'}) + ' ' +
+           d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+  } catch(e){ return iso || ''; }
+}
+
+// 'YYYY-MM-DD' in the REP'S OWN local time zone (not UTC — toISOString()
+// would bucket late-night orders into the wrong calendar day for anyone
+// west of Greenwich). Used to group history entries by the day they were
+// actually submitted, for both the calendar and the day drill-down.
+function localDateKey(iso){
+  const d = new Date(iso);
+  if(isNaN(d)) return '';
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function localYearMonth(iso){
+  const d = iso ? new Date(iso) : new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+// startTab lets a caller open the overlay straight onto a given tab —
+// 'list' (default, used by the 🕘 Order History button) or 'summary'
+// (used by the 📊 Order Summary button) — instead of always landing on
+// the Orders list first.
+function openHistoryOverlay(startTab){
+  const list = loadOrderHistory();
+  historyView.mode = (startTab === 'summary') ? 'summary' : 'list';
+  historyView.index = list.length - 1;
+  historyView.calYearMonth = null; // reset to "this month" each time the overlay opens fresh
+  historyView.calSelectedDate = null;
+  renderHistoryOverlay();
+  els.historyOverlay.classList.remove('hidden');
+}
+
+function closeHistoryOverlay(){
+  els.historyOverlay.classList.add('hidden');
+}
+
+// Shared 2-way tab strip shown above both the Orders list and the Summary
+// tab (never shown in detail mode, which has its own "‹ Back" instead).
+function historyTabsHtml(active){
+  return `
+    <div class="history-tabs">
+      <button type="button" class="history-tab ${active==='list'?'active':''}" data-tab="list">📋 Orders</button>
+      <button type="button" class="history-tab ${active==='summary'?'active':''}" data-tab="summary">📊 Summary</button>
+    </div>
+  `;
+}
+
+function wireHistoryTabs(){
+  els.historyBody.querySelectorAll('.history-tab').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      historyView.mode = btn.dataset.tab;
+      renderHistoryOverlay();
+    });
+  });
+}
+
+function renderHistoryOverlay(){
+  const list = loadOrderHistory();
+
+  if(list.length === 0){
+    els.historyTitle.textContent = 'Order History';
+    els.historyBody.innerHTML = '<div class="history-empty">No orders submitted from this device yet. Once you submit an order, it will show up here.</div>';
+    return;
+  }
+
+  if(historyView.mode === 'list'){
+    els.historyTitle.textContent = `Order History (${list.length})`;
+    // Newest first for browsing, oldest→newest is still how they're stored
+    // (and how Older/Newer paging moves) so "Newer" always means "more recent".
+    const rows = list.map((o, idx) => ({o, idx})).reverse();
+    els.historyBody.innerHTML = historyTabsHtml('list') + rows.map(({o, idx}) => `
+      <div class="history-list-item" data-idx="${idx}">
+        <div class="hl-top"><span>${escapeHtml(o.orderNo||'—')}</span><span>₹${o.netOrderValue||'0.00'}</span></div>
+        <div class="hl-bottom"><span>${escapeHtml(o.customerName||'—')}</span><span>${formatHistoryDate(o.submittedAt)}</span></div>
+      </div>
+    `).join('');
+    wireHistoryTabs();
+    els.historyBody.querySelectorAll('.history-list-item').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        historyView.mode = 'detail';
+        historyView.cameFrom = 'list';
+        historyView.index = parseInt(el.dataset.idx, 10);
+        renderHistoryOverlay();
+      });
+    });
+    return;
+  }
+
+  if(historyView.mode === 'summary'){
+    renderSummaryTab(list);
+    return;
+  }
+
+  // Detail mode — one order, with Older/Newer paging across the whole list.
+  const idx = Math.max(0, Math.min(historyView.index, list.length - 1));
+  historyView.index = idx;
+  const o = list[idx];
+  els.historyTitle.textContent = o.orderNo || 'Order';
+
+  const linesHtml = (o.lines||[]).map(l => `
+    <div class="hd-line">
+      <span>${escapeHtml(l.desc||l.style||'—')} × ${l.qty}${l.validation==='REJECTED'?' ⚠':''}</span>
+      <span>₹${l.lineTotal}</span>
+    </div>
+  `).join('') || '<div class="hd-line"><span>No lines recorded</span><span></span></div>';
+
+  const backLabel = historyView.cameFrom === 'summary' ? '‹ Back to summary' : '‹ Back to list';
+
+  els.historyBody.innerHTML = `
+    <div class="history-order-heading">Order No: ${escapeHtml(o.orderNo||'—')}</div>
+    <button type="button" class="history-back-link" id="historyBackToList">${backLabel}</button>
+    <div class="history-pager">
+      <button type="button" id="historyOlderBtn" ${idx<=0?'disabled':''}>‹ Older</button>
+      <span class="hp-count">${idx+1} of ${list.length}</span>
+      <button type="button" id="historyNewerBtn" ${idx>=list.length-1?'disabled':''}>Newer ›</button>
+    </div>
+    <div class="history-detail">
+      <div class="rr"><span>Customer Name</span><span>${escapeHtml(o.customerName||'—')}</span></div>
+      <div class="rr"><span>Sales Channel</span><span>${escapeHtml(o.salesChannel||'—')}</span></div>
+      <div class="rr"><span>Location</span><span>${escapeHtml(o.location||'—')}</span></div>
+      <div class="rr"><span>Submitted By (Mobile)</span><span>${escapeHtml(o.repMobile||'—')}</span></div>
+      <div class="rr"><span>Submitted</span><span>${formatHistoryDate(o.submittedAt)}</span></div>
+      <div class="rr"><span>Net Order Value</span><span>₹${o.netOrderValue||'0.00'}</span></div>
+      <div class="hd-lines">${linesHtml}</div>
+    </div>
+    <button type="button" class="history-edit-link" id="historyEditBtn">✎ Edit This Order</button>
+  `;
+
+  document.getElementById('historyBackToList').addEventListener('click', ()=>{
+    historyView.mode = historyView.cameFrom === 'summary' ? 'summary' : 'list';
+    renderHistoryOverlay();
+  });
+  const olderBtn = document.getElementById('historyOlderBtn');
+  const newerBtn = document.getElementById('historyNewerBtn');
+  if(olderBtn) olderBtn.addEventListener('click', ()=>{ historyView.index = idx - 1; renderHistoryOverlay(); });
+  if(newerBtn) newerBtn.addEventListener('click', ()=>{ historyView.index = idx + 1; renderHistoryOverlay(); });
+  document.getElementById('historyEditBtn').addEventListener('click', ()=> startEditOrder(o));
+}
+
+// ---------------------------------------------------------------------------
+// SUMMARY TAB — current-month total, a calendar of order counts by day, and
+// four simple all-time report views. Everything here reads from the same
+// on-device Order History as the Orders tab, so it only ever reflects
+// orders submitted from THIS phone (see the ORDER HISTORY comment above).
+// ---------------------------------------------------------------------------
+function renderSummaryTab(list){
+  els.historyTitle.textContent = 'Order History';
+  if(!historyView.calYearMonth) historyView.calYearMonth = localYearMonth();
+
+  els.historyBody.innerHTML =
+    historyTabsHtml('summary') +
+    summaryMonthTotalHtml(list) +
+    calendarHtml(list) +
+    (historyView.calSelectedDate ? calendarDayOrdersHtml(list) : '') +
+    reportsHtml(list);
+
+  wireHistoryTabs();
+  wireCalendarControls(list);
+  wireReportTabs(list);
+  wireCalendarDayOrders(list);
+}
+
+function summaryMonthTotalHtml(list){
+  const [y,m] = historyView.calYearMonth.split('-');
+  const monthLabel = new Date(Number(y), Number(m)-1, 1).toLocaleDateString(undefined,{month:'long', year:'numeric'});
+  const count = list.filter(o => localYearMonth(o.submittedAt) === historyView.calYearMonth).length;
+  return `
+    <div class="summary-month-total">
+      <div class="smt-label">${escapeHtml(monthLabel)}</div>
+      <div class="smt-value">${count} order${count===1?'':'s'}</div>
+    </div>
+  `;
+}
+
+function calendarHtml(list){
+  const [y,m] = historyView.calYearMonth.split('-').map(Number);
+  const firstOfMonth = new Date(y, m-1, 1);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const startOffset = firstOfMonth.getDay(); // 0=Sun
+  const monthLabel = firstOfMonth.toLocaleDateString(undefined,{month:'long', year:'numeric'});
+
+  const countsByDate = {};
+  list.forEach(o=>{
+    const key = localDateKey(o.submittedAt);
+    if(key) countsByDate[key] = (countsByDate[key]||0) + 1;
+  });
+
+  const todayKey = localDateKey(new Date().toISOString());
+
+  let cells = '';
+  for(let i=0;i<startOffset;i++) cells += `<div class="cal-cell cal-empty"></div>`;
+  for(let day=1; day<=daysInMonth; day++){
+    const key = `${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const count = countsByDate[key] || 0;
+    const classes = ['cal-cell'];
+    if(count>0) classes.push('cal-has-orders');
+    if(key===todayKey) classes.push('cal-today');
+    cells += `<div class="${classes.join(' ')}" ${count>0?`data-date="${key}"`:''}>${day}${count>0?`<span class="cal-count">${count}</span>`:''}</div>`;
+  }
+
+  const dayLabels = ['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>`<div class="cal-daylabel">${d}</div>`).join('');
+
+  return `
+    <div class="cal-card">
+      <div class="cal-header">
+        <button type="button" id="calPrevMonth">‹</button>
+        <span class="cal-month-label">${escapeHtml(monthLabel)}</span>
+        <button type="button" id="calNextMonth">›</button>
+      </div>
+      <div class="cal-grid">${dayLabels}${cells}</div>
+    </div>
+  `;
+}
+
+function wireCalendarControls(list){
+  const prevBtn = document.getElementById('calPrevMonth');
+  const nextBtn = document.getElementById('calNextMonth');
+  if(prevBtn) prevBtn.addEventListener('click', ()=>{
+    const [y,m] = historyView.calYearMonth.split('-').map(Number);
+    const d = new Date(y, m-2, 1);
+    historyView.calYearMonth = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    historyView.calSelectedDate = null;
+    renderSummaryTab(list);
+  });
+  if(nextBtn) nextBtn.addEventListener('click', ()=>{
+    const [y,m] = historyView.calYearMonth.split('-').map(Number);
+    const d = new Date(y, m, 1);
+    historyView.calYearMonth = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    historyView.calSelectedDate = null;
+    renderSummaryTab(list);
+  });
+  els.historyBody.querySelectorAll('.cal-cell.cal-has-orders').forEach(cell=>{
+    cell.addEventListener('click', ()=>{
+      historyView.calSelectedDate = cell.dataset.date;
+      renderSummaryTab(list);
+    });
+  });
+}
+
+function calendarDayOrdersHtml(list){
+  const dateKey = historyView.calSelectedDate;
+  const matches = list.map((o, idx)=>({o, idx})).filter(({o}) => localDateKey(o.submittedAt) === dateKey);
+  const label = new Date(dateKey + 'T00:00:00').toLocaleDateString(undefined,{day:'2-digit', month:'short', year:'numeric'});
+  if(matches.length===0) return '';
+  return `
+    <div class="cal-day-orders">
+      <h4>Orders on ${escapeHtml(label)}</h4>
+      ${matches.map(({o, idx}) => `
+        <div class="history-list-item" data-idx="${idx}">
+          <div class="hl-top"><span>${escapeHtml(o.orderNo||'—')}</span><span>₹${o.netOrderValue||'0.00'}</span></div>
+          <div class="hl-bottom"><span>${escapeHtml(o.customerName||'—')}</span><span>${formatHistoryDate(o.submittedAt)}</span></div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function wireCalendarDayOrders(list){
+  const container = els.historyBody.querySelector('.cal-day-orders');
+  if(!container) return;
+  container.querySelectorAll('.history-list-item').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      historyView.mode = 'detail';
+      historyView.cameFrom = 'summary';
+      historyView.index = parseInt(el.dataset.idx, 10);
+      renderHistoryOverlay();
+    });
+  });
+}
+
+const REPORT_TABS = [
+  {key:'total',    label:'Total Orders'},
+  {key:'venue',    label:'Venue-wise'},
+  {key:'qty',      label:'Total Qty'},
+  {key:'customer', label:'By Customer'}
+];
+
+function reportsHtml(list){
+  const tabs = REPORT_TABS.map(t =>
+    `<button type="button" class="report-tab ${historyView.report===t.key?'active':''}" data-report="${t.key}">${t.label}</button>`
+  ).join('');
+  return `
+    <div class="report-tabs">${tabs}</div>
+    <div class="report-card">${reportContentHtml(list, historyView.report)}</div>
+  `;
+}
+
+function wireReportTabs(list){
+  els.historyBody.querySelectorAll('.report-tab').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      historyView.report = btn.dataset.report;
+      renderSummaryTab(list);
+    });
+  });
+}
+
+function reportContentHtml(list, reportKey){
+  if(reportKey === 'total'){
+    return `
+      <div class="report-big-number">
+        <div class="rbn-value">${list.length}</div>
+        <div class="rbn-label">Total orders placed (this device)</div>
+      </div>
+    `;
+  }
+
+  if(reportKey === 'venue'){
+    const counts = {};
+    list.forEach(o => { const k = o.location || 'Unspecified'; counts[k] = (counts[k]||0)+1; });
+    const rows = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    if(rows.length===0) return '<div class="report-empty">No orders yet.</div>';
+    return rows.map(([venue,count]) => `
+      <div class="report-row"><span class="rr-name">${escapeHtml(venue)}</span><span class="rr-count">${count}</span></div>
+    `).join('');
+  }
+
+  if(reportKey === 'qty'){
+    let totalQty = 0;
+    list.forEach(o => (o.lines||[]).forEach(l => { if(l.validation==='Accepted') totalQty += Number(l.qty)||0; }));
+    return `
+      <div class="report-big-number">
+        <div class="rbn-value">${totalQty}</div>
+        <div class="rbn-label">Total quantity ordered (accepted lines)</div>
+      </div>
+    `;
+  }
+
+  if(reportKey === 'customer'){
+    const counts = {};
+    list.forEach(o => { const k = o.customerName || 'Unspecified'; counts[k] = (counts[k]||0)+1; });
+    const rows = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    if(rows.length===0) return '<div class="report-empty">No orders yet.</div>';
+    return rows.map(([name,count]) => `
+      <div class="report-row"><span class="rr-name">${escapeHtml(name)}</span><span class="rr-count">${count} order${count===1?'':'s'}</span></div>
+    `).join('');
+  }
+
+  return '';
+}
+
+// ---------------------------------------------------------------------------
+// EDIT ORDER — reopen a past order (from either History tab) with all of
+// its saved details loaded back into the wizard, so the rep can change
+// something and re-save. Deliberately does NOT touch buildOrderPayload,
+// the cart-line model, or any validation logic — it only pre-fills the
+// same fields/state a rep would normally fill in by hand, then leaves the
+// existing Submit flow to do the rest (see the Guard #3 edit-bypass and
+// saveOrderHistoryEntry's update-in-place logic).
+// ---------------------------------------------------------------------------
+function setLocationByLabel(label){
+  const sel = document.getElementById('location');
+  for(const opt of sel.options){
+    if(opt.textContent === label){ sel.value = opt.value; return; }
+  }
+  // No match (e.g. the label is blank on a very old entry) — leave
+  // whatever the select's default is rather than forcing an empty value.
+}
+
+function showEditingBanner(orderNo){
+  if(!els.editingBanner) return;
+  els.editingBannerText.textContent = `✎ Editing Order ${orderNo}`;
+  els.editingBanner.classList.remove('hidden');
+}
+
+function loadOrderIntoWizard(order){
+  // Clear the cart FIRST — the Sales Channel 'change' handler below already
+  // clears state.cart itself (with its own toast) when it's non-empty, and
+  // we don't want that toast firing here on top of the one this flow shows.
+  state.cart = [];
+  state.editingOrderNo = order.orderNo;
+
+  els.orderNo.value = order.orderNo || getNextOrderNo();
+  els.customerName.value = order.customerName || '';
+  els.shipAddr.value = order.shipAddr || '';
+  els.salesChannel.value = order.salesChannel || '';
+  els.salesChannel.dispatchEvent(new Event('change'));
+  setLocationByLabel(order.location);
+
+  // Rebuild cart lines (including any REJECTED ones, so the rep can see and
+  // fix whatever didn't pass validation last time) from the saved order —
+  // computeCartLines() will re-validate everything fresh against current
+  // master data and pricing the moment the Products/Review steps render.
+  state.cart = (order.lines||[]).map(l => ({
+    style: l.style,
+    qty: Number(l.qty) || 0,
+    unitPrice: parseFloat(l.unitPrice) || 0,
+    discount: parseFloat(l.discount) || 0
+  }));
+
+  renderCart();
+  updateMarginFieldsVisibility();
+  showEditingBanner(order.orderNo);
+  goToStep(1);
+  toast(`Editing Order ${order.orderNo} — make your changes, then Submit to update it.`);
+}
+
+function startEditOrder(order){
+  if(!confirm(`Edit Order ${order.orderNo}? This will replace what's currently in the order form.`)) return;
+  closeHistoryOverlay();
+  loadOrderIntoWizard(order);
+}
+
+els.historyBtn.addEventListener('click', ()=> openHistoryOverlay('list'));
+els.summaryBtn.addEventListener('click', ()=> openHistoryOverlay('summary'));
+els.historyClose.addEventListener('click', closeHistoryOverlay);
+els.historyOverlay.addEventListener('click', (e)=>{
+  // Tapping the dimmed backdrop (not the sheet itself) closes it, matching
+  // the usual "tap outside to dismiss" behaviour of a bottom sheet.
+  if(e.target === els.historyOverlay) closeHistoryOverlay();
+});
+
+// init
+updateSheetStatus();
+renderCart();
+goToStep(1);
+// Customer Name is step 1's first field and the natural starting point for
+// every order — focus it on first load (skip on very small/touch screens
+// where an unsolicited focus would pop the keyboard before the user is ready).
+if(window.matchMedia && window.matchMedia('(min-width:521px)').matches){
+  els.customerName.focus();
+}
+// Kick off a background sync against the Google Sheet (if configured) so
+// the very first order of the session already has the latest data —
+// hydrateMasterDataFromCache() above already showed any cached copy
+// instantly, this just checks whether it's still current.
+loadMasterData();
+</script>
+</body>
+</html>
