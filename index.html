@@ -955,7 +955,7 @@ document.querySelectorAll('[required]').forEach(field => {
   });
 });
 
-// ----------------------------------------------------------------------------
+// ============================================================================
 // PRODUCT MASTERS — one array per Sales Channel. Each channel's array is the
 // single source of truth for that channel's products; they are never merged.
 // To add another channel later: add its product array below, register it in
@@ -1494,11 +1494,11 @@ function ensureRepMobile(){
   return '';
 }
 
-function toast(msg){
+function toast(msg, durationMs){
   els.toast.textContent = msg;
   els.toast.classList.add('show');
   clearTimeout(toast._t);
-  toast._t = setTimeout(()=>els.toast.classList.remove('show'), 2600);
+  toast._t = setTimeout(()=>els.toast.classList.remove('show'), durationMs || 2600);
 }
 
 function locKey(){
@@ -2307,11 +2307,26 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   const csvBlob = buildCsvBlob(payload);
   const fileName = orderFileName(payload);
 
+  // Whether the CSV actually went out as a real WhatsApp attachment (via
+  // the phone's native share sheet) or only as a browser download the rep
+  // has to attach themselves. navigator.canShare({files:[...]}) support for
+  // CSV/text files varies a lot across Android/iOS browser versions and
+  // in-app/PWA WebViews — it can silently be unavailable even on a phone
+  // that supports Web Share for other file types. Previously this was
+  // invisible to the rep: the WhatsApp message still opened either way, so
+  // a fallback-download order LOOKED identical to a fully-automatic one,
+  // and reps had no idea the CSV never actually reached the chat. The
+  // final status toast below now reflects whichever of these three
+  // actually happened, instead of always claiming plain success.
+  let shareOutcome = 'shared'; // 'shared' | 'downloaded' | 'cancelled'
+
   try{
     const file = new File([csvBlob], fileName, {type:'text/csv'});
     if(navigator.canShare && navigator.canShare({files:[file]})){
       await navigator.share({ files:[file], text: message, title:'MyFitness Order' });
+      shareOutcome = 'shared';
     } else {
+      shareOutcome = 'downloaded';
       downloadBlob(csvBlob, fileName);
       const waUrl = WHATSAPP_NUMBER
         ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
@@ -2322,9 +2337,12 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
     if(err && err.name === 'AbortError'){
       // user cancelled the native share sheet — the order still counts as
       // submitted, matching the original behaviour (it's already recorded
-      // in Step A above regardless of what happens here).
+      // in Step A above regardless of what happens here). The rep saw the
+      // share sheet (file was attached and ready) and chose not to send.
+      shareOutcome = 'cancelled';
     } else {
       console.error(err);
+      shareOutcome = 'downloaded';
       downloadBlob(csvBlob, fileName);
       const waUrl = WHATSAPP_NUMBER
         ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
@@ -2343,9 +2361,28 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   const submittedOrderNo = payload.orderNo;
   const verb = isEditingThisOrder ? 'updated' : 'submitted';
   resetForm();
-  toast(sheetOk
-    ? `✅ Order ${submittedOrderNo} ${verb} successfully`
-    : `✅ Order ${submittedOrderNo} sent — sheet sync failed, but WhatsApp/CSV went out`);
+
+  // Build the final status toast from what ACTUALLY happened (shareOutcome
+  // + sheetOk) rather than always reporting plain success — see the
+  // shareOutcome comment above for why this matters: a fallback-download
+  // order used to look identical to a fully-automatic one.
+  let statusMsg;
+  if(shareOutcome === 'cancelled'){
+    statusMsg = `Order ${submittedOrderNo} ${verb}, but the WhatsApp share was cancelled before sending. Use "Send yourself a copy" below, or tap Submit again to resend it.`;
+  } else {
+    statusMsg = `✅ Order ${submittedOrderNo} ${verb} successfully`;
+    if(shareOutcome === 'downloaded'){
+      statusMsg += ` — CSV "${fileName}" was saved to your device. Open WhatsApp and attach it yourself; this phone/browser can't attach files automatically.`;
+    }
+    if(!sheetOk){
+      statusMsg += ' (sheet sync failed, but WhatsApp/CSV still went out)';
+    }
+  }
+  // Give the longer "please attach it yourself" / "share cancelled"
+  // messages more time on screen than the default 2.6s — they're
+  // instructions the rep actually needs to read and act on, not just a
+  // quick confirmation blip.
+  toast(statusMsg, (shareOutcome === 'shared' && sheetOk) ? 2600 : 7000);
   // Offer the rep their own copy of the exact same item/SKU/total details,
   // on WhatsApp, for personal reference — see showSelfCopyBanner() above
   // for why this is a tap-to-send button rather than an auto-opened
