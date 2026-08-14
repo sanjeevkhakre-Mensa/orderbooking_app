@@ -649,7 +649,6 @@
             <option>Supplement</option>
           </select>
         </div>
-        <button class="btn btn-ghost" id="btnReset" style="margin-top:8px;">↺ Start New Order</button>
       </div>
 
       <div class="card">
@@ -2394,7 +2393,7 @@ document.getElementById('btnEmail').addEventListener('click', ()=>{
   window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
 });
 
-// Shared by the manual "Start New Order" button and the automatic reset
+// Shared by the "Cancel editing this order" flow and the automatic reset
 // that runs right after a successful Submit.
 function resetForm(){
   state.cart = [];
@@ -2421,11 +2420,6 @@ function resetForm(){
   // above — loadMasterData() swallows its own errors per tab.
   loadMasterData();
 }
-
-document.getElementById('btnReset').addEventListener('click', ()=>{
-  if(!confirm('Start a new order? This clears all current details and order lines.')) return;
-  resetForm();
-});
 
 els.btnCancelEdit.addEventListener('click', ()=>{
   if(!confirm('Cancel editing this order? Any changes you made will be discarded — the original order is unaffected.')) return;
