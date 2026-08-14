@@ -1,0 +1,16 @@
+# Dependabot configuration for this repo.
+# This is a static HTML/JS site with no package manifest (no package.json, etc.),
+# so the only real "dependency" surface is the GitHub Actions used in .github/workflows.
+# This keeps those action versions patched automatically.
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
