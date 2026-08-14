@@ -19,43 +19,8 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Syntax-check inline JavaScript in index.html
-        run: |
-          node -e "
-          const fs = require('fs');
-          const html = fs.readFileSync('index.html', 'utf8');
-          const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(s => s.trim().length > 0);
-          if (scripts.length === 0) { console.error('No inline <script> blocks found to check.'); process.exit(1); }
-          let ok = true;
-          scripts.forEach((code, i) => {
-            try {
-              new Function(code);
-              console.log('Script block ' + i + ': OK (' + code.length + ' chars)');
-            } catch (e) {
-              ok = false;
-              console.error('Script block ' + i + ' FAILED to parse: ' + e.message);
-            }
-          });
-          if (!ok) process.exit(1);
-          "
-
-      - name: Check HTML tag balance
-        run: |
-          node -e "
-          const fs = require('fs');
-          const html = fs.readFileSync('index.html', 'utf8');
-          let failed = false;
-          ['div','button','section','table','tr','td'].forEach(tag => {
-            const open = (html.match(new RegExp('<' + tag + '(\\s|>)', 'gi')) || []).length;
-            const close = (html.match(new RegExp('</' + tag + '>', 'gi')) || []).length;
-            console.log(tag + ': ' + open + ' open / ' + close + ' close');
-            if (open !== close) {
-              console.error('Mismatched <' + tag + '> tags: ' + open + ' open vs ' + close + ' close');
-              failed = true;
-            }
-          });
-          if (failed) process.exit(1);
-          "
+      - name: Run HTML/JS validity checks
+        run: node .github/scripts/ci-check.js
 
       - name: Scan for newly-introduced secrets
         uses: gitleaks/gitleaks-action@v2
