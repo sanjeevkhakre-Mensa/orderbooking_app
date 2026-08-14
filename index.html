@@ -644,10 +644,6 @@
           <span class="field-hint" id="customerFieldHint">Search from saved buyers, or type a new customer name to add them to this order — save them in the Customer Master sheet so they show up in search next time.</span>
         </div>
         <div class="field">
-          <label>Shipping Address</label>
-          <textarea id="shipAddr" placeholder="Delivery address"></textarea>
-        </div>
-        <div class="field">
           <label>Sales Channel</label>
           <select id="salesChannel" required>
             <option value="">-- Select --</option>
@@ -1012,7 +1008,7 @@ const state = {
 };
 
 const els = {};
-['orderNo','orderNoHint','customerName','buyerResults','shipAddr','salesChannel',
+['orderNo','orderNoHint','customerName','buyerResults','salesChannel',
  'historyBtn','summaryBtn','historyOverlay','historyBody','historyClose','historyTitle',
  'location','marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
  'productSearch','comboResults',
@@ -2043,7 +2039,7 @@ function buildOrderPayload(){
 
   return {
     orderNo: els.orderNo.value, customerName: els.customerName.value, salesChannel: els.salesChannel.value,
-    location: locLabel(), repMobile: getRepMobile(), shipAddr: els.shipAddr.value,
+    location: locLabel(), repMobile: getRepMobile(), 
     totalBeforeGst: totalBeforeGst.toFixed(2), totalDiscount: totalDiscount.toFixed(2),
     totalGst: totalGst.toFixed(2), netOrderValue: netOrderValue.toFixed(2),
     lines: lines.map(l=>{
@@ -2422,7 +2418,7 @@ function resetForm(){
   // just sent, right after this reset runs.
   hideSelfCopyBanner();
   els.orderNo.value = getNextOrderNo();
-  els.customerName.value=''; els.shipAddr.value='';
+  els.customerName.value='';
   els.salesChannel.value='';
   els.productSearch.value = ''; els.comboResults.innerHTML=''; els.comboResults.hidden = true;
   closeAddPanel();
@@ -2895,7 +2891,6 @@ function loadOrderIntoWizard(order){
 
   els.orderNo.value = order.orderNo || getNextOrderNo();
   els.customerName.value = order.customerName || '';
-  els.shipAddr.value = order.shipAddr || '';
   els.salesChannel.value = order.salesChannel || '';
   els.salesChannel.dispatchEvent(new Event('change'));
   setLocationByLabel(order.location);
