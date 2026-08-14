@@ -40,3 +40,5 @@ if (scripts.length === 0) {
 
 if (failed) process.exit(1);
 console.log('CI check passed.');
+
+// (touch to re-trigger CI after workflow fix)
