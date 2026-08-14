@@ -436,7 +436,7 @@
   }
   .ci-remove:hover{ background:var(--red-bg); color:var(--red-text); }
 
-  /* ---------------- Sticky mini summary (step 3) ---------------- */
+  /* ---------------- Sticky mini summary (step 2) ---------------- */
   .mini-summary{
     position:sticky; bottom:80px; margin-top:6px;
     background:var(--ink); color:#fff; border-radius:10px;
@@ -618,15 +618,13 @@
   </div>
 
   <div class="stepper" id="stepper">
-    <div class="step active" data-step="1"><span class="num">1</span><span class="lbl">Details</span></div>
-    <div class="step" data-step="2"><span class="num">2</span><span class="lbl">Pricing</span></div>
-    <div class="step" data-step="3"><span class="num">3</span><span class="lbl">Products</span></div>
-    <div class="step" data-step="4"><span class="num">4</span><span class="lbl">Review</span></div>
+    <div class="step active" data-step="1"><span class="num">1</span><span class="lbl">Order Setup</span></div>
+    <div class="step" data-step="2"><span class="num">2</span><span class="lbl">Products &amp; Review</span></div>
   </div>
 
   <main class="wizard">
 
-    <!-- STEP 1 : ORDER DETAILS -->
+    <!-- STEP 1 : ORDER SETUP (Details + Pricing & Fulfilment) -->
     <section class="panel-step" id="step-1">
       <div class="card">
         <h2>Order Details<span class="hint2">Order Number is generated for you — start by choosing the customer</span></h2>
@@ -653,10 +651,7 @@
         </div>
         <button class="btn btn-ghost" id="btnReset" style="margin-top:8px;">↺ Start New Order</button>
       </div>
-    </section>
 
-    <!-- STEP 2 : PRICING & FULFILMENT -->
-    <section class="panel-step" id="step-2" hidden>
       <div class="card">
         <h2>Pricing &amp; Fulfilment</h2>
         <div class="field">
@@ -692,8 +687,8 @@
       </div>
     </section>
 
-    <!-- STEP 3 : ADD PRODUCTS -->
-    <section class="panel-step" id="step-3" hidden>
+    <!-- STEP 2 : PRODUCTS & REVIEW (Add Products + Cart + Validation/Value Summary + Submit) -->
+    <section class="panel-step" id="step-2" hidden>
       <div class="card">
         <h2>Search &amp; Add Products<span class="hint2">Type a style code, product name or EAN to find an item fast</span></h2>
         <div class="field">
@@ -718,10 +713,7 @@
         <span class="rej">Rejected: <b id="msRejected">0</b></span>
         <span>₹<b id="msValue">0</b></span>
       </div>
-    </section>
 
-    <!-- STEP 4 : REVIEW & SUBMIT -->
-    <section class="panel-step" id="step-4" hidden>
       <div class="card">
         <h2>Order Validation Summary</h2>
         <div class="stat-tiles">
@@ -753,15 +745,7 @@
         <div class="review-recap" id="recapDetails" style="margin-top:8px;"></div>
       </div>
 
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <h2 style="margin:0;">Order Lines <span class="hint2" style="display:inline; text-transform:none; font-weight:500;">(product, qty, unit price, discount, GST &amp; line total)</span></h2>
-          <span class="edit-link" data-goto="3">Edit ✎</span>
-        </div>
-        <div id="reviewCartList" class="cart-list" style="margin-top:8px;"></div>
-      </div>
-
-      <div id="statusLine" class="status-line empty">NO PRODUCTS ADDED — build your order in step 3</div>
+      <div id="statusLine" class="status-line empty">NO PRODUCTS ADDED — search and add products above</div>
 
       <div class="card" style="display:flex; flex-direction:column; gap:10px;">
         <button class="btn btn-whatsapp" id="btnSubmitWA">📤 Submit &amp; Send to WhatsApp</button>
@@ -780,7 +764,7 @@
 
   <div class="wizard-nav">
     <button class="btn btn-outline" id="btnBack">‹ Back</button>
-    <div class="nav-info" id="navInfo">Step 1 / 4</div>
+    <div class="nav-info" id="navInfo">Step 1 / 2</div>
     <button class="btn btn-primary" id="btnNext">Next ›</button>
   </div>
 
@@ -1013,7 +997,7 @@ const els = {};
  'location','marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
  'productSearch','comboResults',
  'addPanel','cartList','cartCount','miniSummary','msLines','msAccepted','msRejected','msValue',
- 'rvLines','rvAccepted','rvRejected','rejectList','recapDetails','reviewCartList','rvTotalValue',
+ 'rvLines','rvAccepted','rvRejected','rejectList','recapDetails','rvTotalValue',
  'rvBeforeGst','rvDiscount','rvGst',
  'statusLine','sheetStatus','btnBack','btnNext','navInfo','toast','stepper',
  'masterDataBar','masterDataText','btnRefreshMasterData',
@@ -1336,7 +1320,6 @@ async function loadMasterData(opts){
   // Re-render anything already on screen so newly-loaded prices/names/
   // customers show up immediately rather than only after the next click.
   renderCart();
-  if(state.step===4) renderReview();
 }
 
 function renderMasterDataStatus(overrideText){
@@ -1422,7 +1405,6 @@ els.salesChannel.addEventListener('change', ()=>{
   }
   updateMarginFieldsVisibility();
   renderCart();
-  if(state.step===4) renderReview();
 });
 
 function getNextOrderNo(){
@@ -1667,7 +1649,7 @@ els.buyerResults.addEventListener('click', (e)=>{
   if(!item || !item.dataset.buyer) return;
   els.customerName.value = item.dataset.buyer;
   els.buyerResults.hidden = true;
-  if(state.step===4) renderReview();
+  renderCart();
 });
 
 document.addEventListener('click', (e)=>{
@@ -1847,6 +1829,44 @@ function renderCart(){
   els.msRejected.textContent = rejected;
   els.msValue.textContent = netOrderValue.toLocaleString('en-IN', {maximumFractionDigits:0});
 
+  // The Order Validation Summary, Order Value Summary, Order Details recap
+  // and status line all live on the same page as the cart now (Products &
+  // Review were merged into a single step) — keep them in sync right here
+  // instead of in a separately-triggered render pass, so every cart/field
+  // change (add, edit, remove, sales channel, location, margins, customer
+  // name) is reflected immediately without relying on callers to remember
+  // a second render call.
+  els.rvLines.textContent = lines.length;
+  els.rvAccepted.textContent = accepted;
+  els.rvRejected.textContent = rejected;
+  els.rvBeforeGst.textContent = fmtMoney(totalBeforeGst);
+  els.rvDiscount.textContent = fmtMoney(totalDiscount);
+  els.rvGst.textContent = fmtMoney(totalGst);
+  els.rvTotalValue.textContent = fmtMoney(netOrderValue);
+
+  const rejectedLines = lines.filter(l=>l.validation==='REJECTED');
+  els.rejectList.innerHTML = rejectedLines.length===0 ? '' : rejectedLines.map(l =>
+    `<div class="reject-row"><b>${l.sku.style}</b> — ${l.sku.desc}: ${l.reason}</div>`
+  ).join('');
+
+  els.recapDetails.innerHTML = [
+    ['Order Number', els.orderNo.value || '—'],
+    ['Customer Name', els.customerName.value || '—'],
+    ['Sales Channel', els.salesChannel.value || '—'],
+    ['Location', locLabel() || '—'],
+  ].map(([k,v])=>`<div class="rr"><span>${k}</span><span>${v}</span></div>`).join('');
+
+  const statusEl = els.statusLine;
+  if(lines.length===0){
+    statusEl.className='status-line empty'; statusEl.textContent='NO PRODUCTS ADDED — search and add products above';
+  } else if(!els.customerName.value || !els.salesChannel.value){
+    statusEl.className='status-line warn'; statusEl.textContent='INCOMPLETE — enter Customer Name and Sales Channel';
+  } else if(rejected>0){
+    statusEl.className='status-line warn'; statusEl.textContent=`${rejected} LINE(S) REJECTED — review reasons above before sending`;
+  } else {
+    statusEl.className='status-line ready'; statusEl.textContent='READY TO SUBMIT — all lines passed validation';
+  }
+
   return { lines, totalQty, totalBeforeGst, totalDiscount, totalGst, netOrderValue, accepted, rejected };
 }
 
@@ -1882,7 +1902,7 @@ document.addEventListener('input', (e)=>{
   else if(e.target.classList.contains('mini-price')){ c.unitPrice = parseFloat(e.target.value)||0; }
   else if(e.target.classList.contains('mini-discount')){ c.discount = parseFloat(e.target.value)||0; }
   else return;
-  renderCart(); if(state.step===4) renderReview();
+  renderCart();
 });
 document.addEventListener('click', (e)=>{
   const rm = e.target.closest('[data-remove]');
@@ -1890,56 +1910,13 @@ document.addEventListener('click', (e)=>{
     const style = rm.dataset.remove;
     state.cart = state.cart.filter(c=>c.style!==style);
     renderCart();
-    if(state.step===4) renderReview();
   }
 });
 
 [document.getElementById('location'), els.marginMF, els.marginPF, els.marginPB, els.marginNONPB].forEach(el=>{
-  el.addEventListener('input', ()=>{ renderCart(); if(state.step===4) renderReview(); });
-  el.addEventListener('change', ()=>{ renderCart(); if(state.step===4) renderReview(); });
+  el.addEventListener('input', ()=>{ renderCart(); });
+  el.addEventListener('change', ()=>{ renderCart(); });
 });
-
-// ============================================================================
-// REVIEW STEP
-// ============================================================================
-function renderReview(){
-  const { lines, totalBeforeGst, totalDiscount, totalGst, netOrderValue, accepted, rejected } = renderCart();
-
-  els.rvLines.textContent = lines.length;
-  els.rvAccepted.textContent = accepted;
-  els.rvRejected.textContent = rejected;
-  els.rvBeforeGst.textContent = fmtMoney(totalBeforeGst);
-  els.rvDiscount.textContent = fmtMoney(totalDiscount);
-  els.rvGst.textContent = fmtMoney(totalGst);
-  els.rvTotalValue.textContent = fmtMoney(netOrderValue);
-
-  const rejectedLines = lines.filter(l=>l.validation==='REJECTED');
-  els.rejectList.innerHTML = rejectedLines.length===0 ? '' : rejectedLines.map(l =>
-    `<div class="reject-row"><b>${l.sku.style}</b> — ${l.sku.desc}: ${l.reason}</div>`
-  ).join('');
-
-  els.reviewCartList.innerHTML = lines.length===0
-    ? '<div class="cart-empty">No products added yet.</div>'
-    : lines.map(l=>cartItemHtml(l)).join('');
-
-  els.recapDetails.innerHTML = [
-    ['Order Number', els.orderNo.value || '—'],
-    ['Customer Name', els.customerName.value || '—'],
-    ['Sales Channel', els.salesChannel.value || '—'],
-    ['Location', locLabel() || '—'],
-  ].map(([k,v])=>`<div class="rr"><span>${k}</span><span>${v}</span></div>`).join('');
-
-  const statusEl = els.statusLine;
-  if(lines.length===0){
-    statusEl.className='status-line empty'; statusEl.textContent='NO PRODUCTS ADDED — build your order in step 3';
-  } else if(!els.customerName.value || !els.salesChannel.value){
-    statusEl.className='status-line warn'; statusEl.textContent='INCOMPLETE — enter Customer Name and Sales Channel';
-  } else if(rejected>0){
-    statusEl.className='status-line warn'; statusEl.textContent=`${rejected} LINE(S) REJECTED — review reasons above before sending`;
-  } else {
-    statusEl.className='status-line ready'; statusEl.textContent='READY TO SUBMIT — all lines passed validation';
-  }
-}
 
 function updateSheetStatus(){
   const on = !!SHEET_WEBAPP_URL;
@@ -1959,11 +1936,11 @@ function goToStep(n){
     s.classList.toggle('active', sn===n);
     s.classList.toggle('done', sn<n);
   });
-  els.navInfo.textContent = `Step ${n} / 4`;
+  els.navInfo.textContent = `Step ${n} / 2`;
   els.btnBack.disabled = (n===1);
-  els.btnNext.textContent = (n===4) ? 'Done ✓' : 'Next ›';
-  els.btnNext.hidden = (n===4);
-  if(n===4) renderReview();
+  els.btnNext.textContent = (n===2) ? 'Done ✓' : 'Next ›';
+  els.btnNext.hidden = (n===2);
+  if(n===2) renderCart();
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
@@ -1975,8 +1952,16 @@ function validateRequiredFieldsIn(stepEl){
   let firstInvalid = null;
   requiredFields.forEach(field=>{
     // Margin fields belonging to the sales channel that ISN'T currently
-    // selected are hidden and irrelevant — don't block on those.
-    if(field.closest('[hidden]')) return;
+    // selected are hidden and irrelevant — don't block on those. Note:
+    // this deliberately ignores stepEl's OWN [hidden] attribute (checked
+    // via `!== stepEl` below) — validateAllSteps() calls this on steps
+    // that aren't the one currently on screen (e.g. after a user jumps
+    // straight to step 2 via the stepper tabs), and stepEl itself is
+    // `hidden` in that case. Without this distinction, every required
+    // field in an off-screen step would look "hidden" and silently skip
+    // validation, letting Submit fire with a blank customer name, etc.
+    const hiddenAncestor = field.closest('[hidden]');
+    if(hiddenAncestor && hiddenAncestor !== stepEl) return;
     const empty = !field.value || String(field.value).trim()==='';
     field.style.borderColor = empty ? 'var(--red-text)' : '';
     if(empty && !firstInvalid) firstInvalid = field;
@@ -1984,11 +1969,13 @@ function validateRequiredFieldsIn(stepEl){
   return firstInvalid;
 }
 
-// Validates every required field across ALL steps (Order Details + Pricing),
-// not just whichever step is currently open. This matters because the
-// stepper tabs at the top let a user jump straight to Review (step 4)
-// without ever passing through btnNext's per-step check below — without
-// this, Submit could fire with a blank customer name, sales channel, etc.
+// Validates every required field across ALL steps (Order Details + Pricing
+// live in step 1; nothing in step 2 is currently marked required, but this
+// stays generic in case that changes), not just whichever step is currently
+// open. This matters because the stepper tabs at the top let a user jump
+// straight to Products & Review (step 2) without ever passing through
+// btnNext's per-step check below — without this, Submit could fire with a
+// blank customer name, sales channel, etc.
 function validateAllSteps(){
   for(let step=1; step<=2; step++){
     const invalid = validateRequiredFieldsIn(document.getElementById('step-'+step));
@@ -2006,7 +1993,7 @@ function jumpToInvalidField(field){
 }
 
 document.getElementById('btnNext').addEventListener('click', ()=>{
-  if(state.step>=4) return;
+  if(state.step>=2) return;
   const currentStep = document.getElementById('step-'+state.step);
   const invalid = validateRequiredFieldsIn(currentStep);
   if(invalid){
@@ -2199,14 +2186,14 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   const payload = buildOrderPayload();
   if(payload.lines.length===0){
     toast('Add at least one product before submitting');
-    goToStep(3);
+    goToStep(2);
     return;
   }
   if(!payload.lines.some(l=>l.validation==='Accepted')){
     // Every line is rejected (bad qty/price) — the export only ever
     // contains Accepted lines, so there'd be nothing but a header row.
     toast('Every product line is rejected — fix them before submitting');
-    goToStep(3);
+    goToStep(2);
     return;
   }
 
