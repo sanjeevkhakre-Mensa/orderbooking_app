@@ -28,15 +28,20 @@ sync.
 
 ## Step 1 — Identify the Live Inventory spreadsheet
 
-`index.html`'s `MASTER_DATA_URLS.inventory` already points at a published
-CSV link for a "Live Inventory" tab. Open the actual Google Sheet behind
-that published link (File → the sheet you originally published from) — this
-is the spreadsheet everything below gets added to.
+Already confirmed (2026-08-24, via Drive): this is the spreadsheet named
+**"Live_Inventory_tab"**, owned by `claude7@mensabrands.com`:
 
-If you don't already have a real spreadsheet behind that link, create one
-now with a single tab named `Live Inventory` and publish it the same way
-the other master-data tabs are published (File → Share → Publish to web →
-that tab → CSV).
+```
+https://docs.google.com/spreadsheets/d/19K5gNBYtMYwPraUIIqJB06m1VwfdJq7AdGJUfgb9asA/edit
+```
+
+Open that link directly — this is the spreadsheet everything below gets
+added to. `InventorySync.gs` and `OrderLoggingAddition.gs` are already
+configured with this exact spreadsheet ID, and `InventorySync.gs` looks up
+its existing tab by `gid` (matching `MASTER_DATA_URLS.inventory`'s
+published link) rather than by name, so it updates the real tab your app
+already reads regardless of what that tab is actually named inside the
+sheet.
 
 ## Step 2 — Add the Apps Script project
 
@@ -92,20 +97,21 @@ checks, 9 AM–2 PM IST — safe to re-run, it clears old triggers first.
 
 ## Step 6 — Wire up live Booked Qty on order submission
 
-1. Note this spreadsheet's ID (from its URL) — you'll need it in the next
-   step.
-2. Open the **existing** order-logging Apps Script project (the one behind
-   `index.html`'s `SHEET_WEBAPP_URL`).
-3. Add a new script file to that project, paste in
-   [`apps-script/OrderLoggingAddition.gs`](apps-script/OrderLoggingAddition.gs),
-   and fill in `LIVE_INVENTORY_SPREADSHEET_ID` at the top with the ID from
-   step 1 above.
-4. In that project's existing `doPost(e)` function, add one line —
+1. Open the **existing** order-logging Apps Script project (the one behind
+   `index.html`'s `SHEET_WEBAPP_URL`) — this is most likely bound to the
+   "MyFitness Order History" spreadsheet
+   (`1echLxpMrYI7QRc3x-in8sskct3UuupzDHloKqhA4ikE`), found the same way as
+   Step 1 — open that sheet and check Extensions → Apps Script for an
+   existing project.
+2. Add a new script file to that project, paste in
+   [`apps-script/OrderLoggingAddition.gs`](apps-script/OrderLoggingAddition.gs)
+   as-is — `LIVE_INVENTORY_SPREADSHEET_ID` is already filled in.
+3. In that project's existing `doPost(e)` function, add one line —
    `applyBookedQtyForOrder(payload);` — right after the point where the
    order row is already appended to the Order History sheet. See the
    comment block at the top of `OrderLoggingAddition.gs` for exact
    placement guidance.
-5. Save and re-deploy that Web App (Deploy → Manage deployments → edit →
+4. Save and re-deploy that Web App (Deploy → Manage deployments → edit →
    New version) so the change takes effect.
 
 ## Step 7 — Turn on the Inventory section in the app

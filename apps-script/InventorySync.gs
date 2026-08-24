@@ -50,6 +50,16 @@ var CONFIG = {
   GMAIL_SEARCH: 'from:sanjeev.khakre@mensabrands.com subject:"Myfitness B2B inventory view" newer_than:3d',
   ATTACHMENT_NAME_HINT: 'inventory',
 
+  // gid of the tab already published as CSV at index.html's
+  // MASTER_DATA_URLS.inventory (confirmed 2026-08-24: the real spreadsheet
+  // is "Live_Inventory_tab", file ID 19K5gNBYtMYwPraUIIqJB06m1VwfdJq7AdGJUfgb9asA).
+  // Looked up by gid, NOT by tab name — the actual tab's name inside that
+  // file is unconfirmed, and matching by name risks silently creating a
+  // second, unpublished tab that index.html never sees while the real one
+  // stays stale forever. Leave blank only for a brand-new setup with no
+  // existing published tab yet, in which case SHEET_LIVE_INVENTORY (by
+  // name) is used to create one from scratch.
+  LIVE_INVENTORY_GID: 212855391,
   SHEET_LIVE_INVENTORY: 'Live Inventory',
   SHEET_SYNC_HISTORY: 'Inventory Sync History',
   SHEET_UNMATCHED_SKUS: 'Unmatched SKUs',
@@ -150,6 +160,7 @@ function syncInventoryFromGmail(){
     summary.skusReceived = parsed.length;
 
     var productMaster = readProductMasterStyleCodes();
+    var liveInventorySheet = getLiveInventorySheet(ss);
     var updated = 0, matched = 0, unmatched = 0;
     var lastSyncStamp = new Date();
     var sourceRef = message.getId() + ' (' + Utilities.formatDate(summary.emailReceivedAt, 'Asia/Kolkata', 'dd-MMM-yyyy HH:mm') + ')';
@@ -158,7 +169,7 @@ function syncInventoryFromGmail(){
       var masterEntry = productMaster[row.styleId];
       if(masterEntry){
         matched++;
-        upsertLiveInventoryRow(ss, row, masterEntry.desc, lastSyncStamp, sourceRef, 'OK');
+        upsertLiveInventoryRow(liveInventorySheet, row, masterEntry.desc, lastSyncStamp, sourceRef, 'OK');
         updated++;
       } else {
         unmatched++;
@@ -328,6 +339,25 @@ function getOrCreateSheet(ss, name, headers){
   return sheet;
 }
 
+// Looks up the Live Inventory tab by gid first (CONFIG.LIVE_INVENTORY_GID —
+// the tab already published as CSV and read by index.html), falling back to
+// a name-based getOrCreateSheet only when no gid is configured or that gid
+// doesn't exist yet (a brand-new setup with nothing published so far).
+// Always re-asserts the header row so an existing tab with an older/shorter
+// header layout (e.g. just Style Code/Bhiwandi Qty/GGN Qty/Last Synced)
+// gets upgraded to match the columns this script actually writes, instead
+// of silently drifting out of sync with row 1.
+function getLiveInventorySheet(ss){
+  var sheet = null;
+  if(CONFIG.LIVE_INVENTORY_GID){
+    sheet = ss.getSheets().find(function(s){ return s.getSheetId() === CONFIG.LIVE_INVENTORY_GID; });
+  }
+  if(!sheet) sheet = getOrCreateSheet(ss, CONFIG.SHEET_LIVE_INVENTORY, LIVE_INVENTORY_HEADERS);
+  sheet.getRange(1, 1, 1, LIVE_INVENTORY_HEADERS.length).setValues([LIVE_INVENTORY_HEADERS]);
+  sheet.setFrozenRows(1);
+  return sheet;
+}
+
 function findRowByValue(sheet, columnIndex1Based, value){
   var data = sheet.getDataRange().getValues();
   for(var i = 1; i < data.length; i++){
@@ -336,8 +366,7 @@ function findRowByValue(sheet, columnIndex1Based, value){
   return -1;
 }
 
-function upsertLiveInventoryRow(ss, row, skuName, syncStamp, sourceRef, status){
-  var sheet = getOrCreateSheet(ss, CONFIG.SHEET_LIVE_INVENTORY, LIVE_INVENTORY_HEADERS);
+function upsertLiveInventoryRow(sheet, row, skuName, syncStamp, sourceRef, status){
   var total = row.bhiwandi + row.ggn;
   var rowValues = [
     row.styleId, skuName, row.category, row.size,

@@ -30,7 +30,10 @@
  *      Live Inventory sheet is unreachable.
  */
 
-var LIVE_INVENTORY_SPREADSHEET_ID = 'FILL_IN_LIVE_INVENTORY_SPREADSHEET_ID';
+// Confirmed 2026-08-24 via Drive: the "Live_Inventory_tab" spreadsheet,
+// same one InventorySync.gs writes to and index.html's
+// MASTER_DATA_URLS.inventory reads as CSV.
+var LIVE_INVENTORY_SPREADSHEET_ID = '19K5gNBYtMYwPraUIIqJB06m1VwfdJq7AdGJUfgb9asA';
 var LIVE_INVENTORY_SHEET_NAME = 'Live Inventory';
 
 // Column positions match the header row InventorySync.gs writes:
