@@ -6,8 +6,21 @@ One-time setup to turn on automatic SKU-level inventory sync from the daily
 ## What you're setting up
 
 ```
-tech@mensabrands.com  →  Gmail  →  InventorySync.gs  →  "Live Inventory" Google Sheet  →  index.html (reads as CSV, same as Product/Customer Master)
+tech@mensabrands.com  →  sanjeev.khakre@mensabrands.com (receives + forwards)
+                       →  claude7@mensabrands.com (Gmail, receives the forward)
+                       →  InventorySync.gs
+                       →  "Live Inventory" Google Sheet
+                       →  index.html (reads as CSV, same as Product/Customer Master)
 ```
+
+Confirmed flow: the automated report is sent by `tech@mensabrands.com` to a
+distribution list including `sanjeev.khakre@mensabrands.com`, who forwards
+it each day to `claude7@mensabrands.com`. That forward keeps the real
+`.xlsx` attachment intact — verified directly against a real forwarded
+message. `InventorySync.gs`'s `GMAIL_SEARCH` filters on the forwarder
+(`sanjeev.khakre@mensabrands.com`), not the original sender, and the script
+must be authorized under `claude7@mensabrands.com`'s Google account (Step 2
+below) since that's the mailbox that actually receives the forward.
 
 Plus one small addition to the *existing* order-logging Apps Script so
 Booked Qty updates the instant an order is submitted, not just on the next
@@ -38,12 +51,11 @@ that tab → CSV).
    **Drive API** → **Add**.
 5. Save, then run `syncInventoryFromGmail` once from the editor's function
    picker. The first run will prompt for authorization — review and accept
-   the Gmail (read-only) and Sheets/Drive permissions. This authorizes
-   whichever Google account you're logged in as when you click Allow — make
-   sure that's the mailbox that actually receives the daily email (today
-   that's `claude7@mensabrands.com`, which gets it forwarded from
-   `sanjeev.khakre@mensabrands.com` — see the note at the bottom if you'd
-   rather point this at `sanjeev.khakre@mensabrands.com` directly).
+   the Gmail (read-only) and Sheets/Drive permissions. **You must be logged
+   into Google as `claude7@mensabrands.com`** when you click Allow — this
+   authorizes whichever account is active at that moment, and the search
+   query only finds the email in that specific mailbox (where
+   sanjeev.khakre@mensabrands.com's daily forward actually lands).
 6. Check the spreadsheet — you should now see populated `Live Inventory`,
    `Inventory Sync History`, and `Unmatched SKUs` tabs, plus a hidden
    `Processed Emails` tab.
@@ -102,14 +114,13 @@ In `index.html`, fill in the URLs from steps 3–4 and, when you're ready to
 start blocking over-quantity bookings (rather than just warning), flip
 `STOCK_VALIDATION_ENABLED` to `true`.
 
-## Note: pointing this at sanjeev.khakre@mensabrands.com instead
+## Dependency to be aware of
 
-Everything above assumes the script is authorized under whichever account
-you're logged into Google as during Step 2.5 — currently written assuming
-that's `claude7@mensabrands.com` (the mailbox already receiving this email
-today, as a forward). If you'd rather have it read directly from
-`sanjeev.khakre@mensabrands.com`'s own inbox instead of depending on that
-forward continuing, just do Step 2 while logged into Google as
-`sanjeev.khakre@mensabrands.com` — nothing else in `InventorySync.gs` needs
-to change, since the Gmail search filters by the actual sender
-(`tech@mensabrands.com`), not by which mailbox it lands in.
+This whole sync depends on `sanjeev.khakre@mensabrands.com` continuing to
+manually forward the daily email to `claude7@mensabrands.com` each morning
+— if that forward is ever missed, that day's sync simply finds nothing new
+(`No New Email` in Sync History) rather than failing loudly. If you'd
+rather remove that manual step later (e.g. a Gmail forwarding filter, or
+adding `claude7@mensabrands.com` directly to `tech@mensabrands.com`'s
+distribution list), the only thing that would need to change in
+`InventorySync.gs` is `CONFIG.GMAIL_SEARCH`'s `from:` address.

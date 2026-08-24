@@ -4,9 +4,14 @@
  * Bound to the "Live Inventory" Google Sheet — the same spreadsheet already
  * published as CSV and read by MASTER_DATA_URLS.inventory in index.html.
  *
+ * Runs under claude7@mensabrands.com, which receives the daily inventory
+ * email as a manual forward from sanjeev.khakre@mensabrands.com (who's on
+ * the original distribution list from tech@mensabrands.com's automated
+ * report). The forward preserves the real .xlsx attachment.
+ *
  * What this script does:
- *   1. Finds the latest unprocessed "Myfitness B2B inventory view" email
- *      from tech@mensabrands.com.
+ *   1. Finds the latest unprocessed "Myfitness B2B inventory view" forward
+ *      from sanjeev.khakre@mensabrands.com.
  *   2. Reads its .xlsx attachment (falls back to the HTML body table if the
  *      attachment is missing).
  *   3. Matches each row's style_id against the Product Master (read-only —
@@ -33,10 +38,16 @@ var CONFIG = {
   PRODUCT_GID_GT: 639235062,
   PRODUCT_GID_SUPPLEMENT: 1572320868,
 
-  // Confirmed against the real mailbox on 2026-08-24 — the automated
-  // Metabase pulse, not sanjeev.khakre@ (he's just a recipient on the
-  // distribution list).
-  GMAIL_SEARCH: 'from:tech@mensabrands.com subject:"Myfitness B2B inventory view" newer_than:3d',
+  // Confirmed flow (2026-08-24): the automated Metabase pulse originates
+  // from tech@mensabrands.com, but this script runs under
+  // claude7@mensabrands.com, which only ever receives it as a manual
+  // Gmail forward FROM sanjeev.khakre@mensabrands.com — so this filters on
+  // the forwarder, not the original sender. Confirmed the forward carries
+  // the real .xlsx attachment through intact (Gmail's plain "Forward",
+  // not "Forward as attachment", keeps original attachments). The subject
+  // match still works unchanged since Gmail prefixes forwards as "Fwd:
+  // Myfitness B2B inventory view" — a substring match, not an exact one.
+  GMAIL_SEARCH: 'from:sanjeev.khakre@mensabrands.com subject:"Myfitness B2B inventory view" newer_than:3d',
   ATTACHMENT_NAME_HINT: 'inventory',
 
   SHEET_LIVE_INVENTORY: 'Live Inventory',
