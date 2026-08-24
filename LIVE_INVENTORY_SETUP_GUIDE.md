@@ -6,21 +6,25 @@ One-time setup to turn on automatic SKU-level inventory sync from the daily
 ## What you're setting up
 
 ```
-tech@mensabrands.com  →  sanjeev.khakre@mensabrands.com (receives + forwards)
-                       →  claude7@mensabrands.com (Gmail, receives the forward)
+tech@mensabrands.com  →  sanjeev.khakre@mensabrands.com (Gmail, receives it directly)
                        →  InventorySync.gs
                        →  "Live Inventory" Google Sheet
                        →  index.html (reads as CSV, same as Product/Customer Master)
 ```
 
-Confirmed flow: the automated report is sent by `tech@mensabrands.com` to a
-distribution list including `sanjeev.khakre@mensabrands.com`, who forwards
-it each day to `claude7@mensabrands.com`. That forward keeps the real
-`.xlsx` attachment intact — verified directly against a real forwarded
-message. `InventorySync.gs`'s `GMAIL_SEARCH` filters on the forwarder
-(`sanjeev.khakre@mensabrands.com`), not the original sender, and the script
-must be authorized under `claude7@mensabrands.com`'s Google account (Step 2
-below) since that's the mailbox that actually receives the forward.
+The automated report is sent by `tech@mensabrands.com` to a distribution
+list that includes `sanjeev.khakre@mensabrands.com` directly, so the script
+runs under his account and reads the original email — no forwarding step,
+no dependency on a forward happening every day.
+
+(An earlier version of this setup ran the script under
+`claude7@mensabrands.com` against a manually-forwarded copy instead. That
+hit a hard blocker: `claude7@mensabrands.com`'s Workspace admin has the
+Gmail/Mail service disabled for that account, so `GmailApp` failed with
+"Mail service not enabled" — an admin-level restriction no code change can
+work around. Since `Live_Inventory_tab` and `MyFitness_Master_Data` are
+both owned by `claude7@mensabrands.com`, both have already been shared
+with `sanjeev.khakre@mensabrands.com` as an editor so Step 2 below works.)
 
 Plus one small addition to the *existing* order-logging Apps Script so
 Booked Qty updates the instant an order is submitted, not just on the next
@@ -57,10 +61,12 @@ sheet.
 5. Save, then run `syncInventoryFromGmail` once from the editor's function
    picker. The first run will prompt for authorization — review and accept
    the Gmail (read-only) and Sheets/Drive permissions. **You must be logged
-   into Google as `claude7@mensabrands.com`** when you click Allow — this
-   authorizes whichever account is active at that moment, and the search
-   query only finds the email in that specific mailbox (where
-   sanjeev.khakre@mensabrands.com's daily forward actually lands).
+   into Google as `sanjeev.khakre@mensabrands.com`** when you click Allow —
+   this authorizes whichever account is active at that moment, and the
+   search query only finds the email in that specific mailbox. You'll
+   likely see a "Google hasn't verified this app" warning first — that's
+   normal for a personal script; click **Advanced → Go to (project name)
+   (unsafe)** to get to the actual permission list, then **Allow**.
 6. Check the spreadsheet — you should now see populated `Live Inventory`,
    `Inventory Sync History`, and `Unmatched SKUs` tabs, plus a hidden
    `Processed Emails` tab.
@@ -122,11 +128,9 @@ start blocking over-quantity bookings (rather than just warning), flip
 
 ## Dependency to be aware of
 
-This whole sync depends on `sanjeev.khakre@mensabrands.com` continuing to
-manually forward the daily email to `claude7@mensabrands.com` each morning
-— if that forward is ever missed, that day's sync simply finds nothing new
-(`No New Email` in Sync History) rather than failing loudly. If you'd
-rather remove that manual step later (e.g. a Gmail forwarding filter, or
-adding `claude7@mensabrands.com` directly to `tech@mensabrands.com`'s
-distribution list), the only thing that would need to change in
-`InventorySync.gs` is `CONFIG.GMAIL_SEARCH`'s `from:` address.
+`Live_Inventory_tab` and `MyFitness_Master_Data` are owned by
+`claude7@mensabrands.com`; `sanjeev.khakre@mensabrands.com` only has editor
+access via sharing, not ownership. If that sharing is ever revoked, the
+script starts failing with a permissions error in Sync History — sharing
+access, not the Gmail flow, is now the thing to check first if sync stops
+working.
