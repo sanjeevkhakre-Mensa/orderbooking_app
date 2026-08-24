@@ -220,11 +220,18 @@ function extractInventoryRows(message){
 // has no native XLSX reader). Requires the "Drive API" Advanced Service to
 // be enabled on this project — see the setup guide.
 //
-// Uses Drive API v3 method names (Files.create / Files.delete, "name" not
-// "title", conversion driven by the target mimeType rather than an
-// explicit convert:true flag) — v2's Files.insert/Files.remove throw
-// "is not a function" on a project with the v3 Advanced Service enabled,
-// which is what Apps Script adds by default today.
+// Creation uses the Advanced Drive Service (Files.create, "name" not
+// "title", conversion driven by the target mimeType) — v2's Files.insert
+// throws "is not a function" against the v3 service Apps Script enables by
+// default today. Cleanup deliberately uses the simpler built-in DriveApp
+// instead of the Advanced Service's own delete/remove method: two guesses
+// at that method's actual name (Files.delete, then reverting to
+// Files.remove) both failed against the real project, so this sidesteps
+// needing to know it at all. Cleanup is also wrapped in its own try/catch
+// — a failure to trash the temp file must never mask a successful read
+// (which is exactly what happened here: the read succeeded and this
+// function still reported failure because cleanup threw in the `finally`
+// block, overriding the return above it).
 function xlsxBlobToRows(blob){
   var tempFile = Drive.Files.create(
     { name: 'tmp_inventory_import_' + new Date().getTime(), mimeType: MimeType.GOOGLE_SHEETS },
@@ -236,7 +243,8 @@ function xlsxBlobToRows(blob){
     var values = sheet.getDataRange().getValues();
     return valuesToObjects(values);
   } finally {
-    Drive.Files.delete(tempFile.id);
+    try{ DriveApp.getFileById(tempFile.id).setTrashed(true); }
+    catch(cleanupErr){ /* best-effort only — an orphaned temp file is harmless */ }
   }
 }
 
