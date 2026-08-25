@@ -897,7 +897,9 @@ const MASTER_DATA_CACHE_MINUTES = 15;
 // Unmatched SKUs sections and the manual Sync Now button quietly inactive;
 // the SKU table itself still works off MASTER_DATA_URLS.inventory above.
 const INVENTORY_SYNC_WEBAPP_URL = "";
-const SYNC_HISTORY_URL = "";
+const SYNC_HISTORY_URL = "https://docs.google.com/spreadsheets/d/19K5gNBYtMYwPraUIIqJB06m1VwfdJq7AdGJUfgb9asA/export?format=csv&gid=32926594";
+// Unmatched SKUs tab gid not yet confirmed — leave blank until known
+// (the Inventory overlay already handles this gracefully as "not configured").
 const UNMATCHED_SKU_URL = "";
 
 // When true, a line whose quantity exceeds Remaining Inventory is REJECTED
