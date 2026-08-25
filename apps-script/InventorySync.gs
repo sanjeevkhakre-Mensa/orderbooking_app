@@ -88,7 +88,21 @@ function onOpen(){
     .createMenu('Inventory Sync')
     .addItem('Sync Now', 'syncInventoryFromGmail')
     .addItem('Install Daily Trigger (run once)', 'createDailyTrigger')
+    .addItem('List Tab GIDs (for Publish to web)', 'listSheetGids')
     .addToUi();
+}
+
+// Shows every tab's name + gid in a popup — the gid is what the "Publish to
+// web" CSV link needs, and reading it from a popup here is far less
+// error-prone than the Publish dialog's sheet-picker dropdown (which can
+// silently keep whatever was previously published if you don't explicitly
+// reselect from its list) or hunting through the browser's URL bar per tab.
+function listSheetGids(){
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var lines = ss.getSheets().map(function(s){
+    return s.getSheetName() + '  →  gid=' + s.getSheetId();
+  });
+  SpreadsheetApp.getUi().alert('Tab GIDs', lines.join('\n'), SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 // Web App entry point — called by index.html's "Sync Inventory Now" button.
