@@ -2507,32 +2507,34 @@ function formatScanIdentifier(ean){
 
 // ============================================================================
 // ORDER CSV — a single file, human-readable, one row per Accepted line item.
-// Columns trimmed to exactly what was asked for — note this means it NO
-// LONGER carries the full DOFSOSKU column set (Price and PO Qty were
-// explicitly removed here), so if the downstream import system still needs
-// those, it will need a separate export again. No order-level summary/
-// Grand Total rows — also explicitly removed; that figure is still shown
-// on-screen (Review step) and in the WhatsApp message, just not in this file.
+//
+// The first 5 columns (Scan Identifier, Ordered Qty, Price Type, Price,
+// PO Qty) are deliberately FIRST and in this EXACT order — this is the
+// block that gets copy-pasted directly into the final order booking sheet,
+// so both the set of columns and their position have to match exactly.
+// Everything else follows after, for reference only.
 //
 // Only Accepted lines are included (Rejected ones dropped entirely) — with
 // no Line Status column, there'd be no way to tell a rejected line apart
 // from a real one, so showing it at all would misrepresent the order rather
-// than merely omit detail.
+// than merely omit detail. No order-level summary/Grand Total rows — that
+// figure is still shown on-screen (Review step) and in the WhatsApp
+// message, just not in this file.
 // ============================================================================
 function buildCsvRows(payload){
   const headers = [
-    'Order No', 'Order Date', 'Sales Channel',
-    'Scan Identifier', 'Style / SKU Code', 'Ordered Qty', 'MRP',
-    'Unit Price (Excl. GST)', 'Price Type', 'GST Amount', 'Line Item Total'
+    'Scan Identifier', 'Ordered Qty', 'Price Type', 'Price', 'PO Qty',
+    'Order No', 'Order Date', 'Sales Channel', 'Style / SKU Code', 'MRP',
+    'Unit Price (Excl. GST)', 'GST Amount', 'Line Item Total'
   ];
   const rows = [headers];
   const orderDate = payload.submittedAt ? formatHistoryDate(payload.submittedAt) : '';
 
   payload.lines.filter(l=>l.validation==='Accepted').forEach(l=>{
     rows.push([
-      payload.orderNo || '', orderDate, payload.salesChannel || '',
-      formatScanIdentifier(l.ean), l.style || '', l.qty, l.mrp || '',
-      l.unitPrice, l.priceType, l.gstAmount, l.lineTotal
+      formatScanIdentifier(l.ean), l.qty, l.priceType, l.exportPrice, l.qty,
+      payload.orderNo || '', orderDate, payload.salesChannel || '', l.style || '', l.mrp || '',
+      l.unitPrice, l.gstAmount, l.lineTotal
     ]);
   });
 
