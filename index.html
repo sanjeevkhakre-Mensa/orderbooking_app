@@ -875,7 +875,13 @@ const MASTER_DATA_URLS = {
   customers: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=226489656",           // Customer Master tab
   productsGT: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=639235062",          // Product Master — General Trade tab
   productsSupplement: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=1572320868", // Product Master — Supplement tab
-  inventory: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSSbcivxAWc9ayoY9dqeju74ZpVuYIJuSAifnt0XPPkTpVVhl9pjzwLJb-rbK6nO6iFkrVRfVhR4wHD/pub?gid=212855391&single=true&output=csv" // Live Inventory — published CSV link the user provided directly.
+  // Switched from a "Publish to web" (/pub) link to the same /export
+  // pattern the other three tabs already use — verified 2026-08-26 that the
+  // old /pub link was serving a stale, frozen snapshot from a much older,
+  // completely different sheet layout, unrelated to whatever's actually
+  // live in the tab. Publish-to-web links don't reliably auto-update on
+  // edits; /export always reflects the sheet's current content.
+  inventory: "https://docs.google.com/spreadsheets/d/19K5gNBYtMYwPraUIIqJB06m1VwfdJq7AdGJUfgb9asA/export?format=csv&gid=212855391" // Live Inventory tab.
 };
 
 // Live Inventory Check: how stale a sync can be before the app stops
