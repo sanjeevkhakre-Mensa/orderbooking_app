@@ -1636,7 +1636,11 @@ function renderInventoryTable(){
 
   els.invTableBody.innerHTML = rows.map(({inv, desc}) => {
     const remainingCls = inv.remaining<=0 ? 'inv-qty-bad' : (inv.remaining < inv.booked ? 'inv-qty-warn' : '');
-    const updated = inv.syncedAt ? new Date(inv.syncedAt).toLocaleString('en-IN', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : '—';
+    // Same fallback as renderInvSyncStatusLine() — the manually-pasted
+    // Increff export has no per-row timestamp column, so every row falls
+    // back to when this device last successfully pulled the whole sheet.
+    const rowSyncedAt = inv.syncedAt || (masterData.status.inventory && masterData.status.inventory.updatedAt) || null;
+    const updated = rowSyncedAt ? new Date(rowSyncedAt).toLocaleString('en-IN', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : '—';
     return `<tr>
       <td>${inv.style}</td>
       <td>${desc || '—'}</td>
@@ -1656,9 +1660,17 @@ function renderInvSyncStatusLine(){
     els.invSyncStatus.className = 'inv-syncstatus';
     return;
   }
-  const staleMs = liveInventorySyncedAt ? (Date.now() - liveInventorySyncedAt) : null;
+  // liveInventorySyncedAt comes from a "Last Synced" column in the CSV
+  // itself (only present in the older InventorySync.gs-written format).
+  // The manually-pasted Increff export has no such column at all, so this
+  // falls back to masterData.status.inventory.updatedAt — when this device
+  // last successfully pulled the Live Inventory sheet, which is always
+  // populated and is what "sync time" actually means under the manual
+  // paste-and-refresh workflow.
+  const syncedAt = liveInventorySyncedAt || (masterData.status.inventory && masterData.status.inventory.updatedAt) || null;
+  const staleMs = syncedAt ? (Date.now() - syncedAt) : null;
   const isStale = staleMs !== null && staleMs > INVENTORY_STALE_AFTER_HOURS*3600*1000;
-  const when = liveInventorySyncedAt ? new Date(liveInventorySyncedAt).toLocaleString('en-IN', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : 'never';
+  const when = syncedAt ? new Date(syncedAt).toLocaleString('en-IN', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : 'never';
 
   if(isStale){
     els.invSyncStatus.textContent = `Last Inventory Sync: ${when} — ⏱ may be out of date`;
