@@ -2753,29 +2753,58 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   let sheetOk = true;
   try{ await postToSheet(payload); } catch(err){ sheetOk = false; console.error('Sheet sync failed', err); }
 
-  // Step C: open WhatsApp with the order details AND the order CSV, both as
-  // plain message text — no file attachment. This runs LAST, on purpose —
-  // see the comment on Step A above.
+  // Step C: open WhatsApp with the order details (native share sheet with
+  // the CSV attached as a real file, when the phone/browser supports it;
+  // otherwise a CSV download + plain wa.me link). This runs LAST, on
+  // purpose — see the comment on Step A above.
   //
-  // Previously this tried navigator.share({files:[csvBlob]}) first (a real
-  // WhatsApp file attachment), falling back to a browser download + plain
-  // wa.me link only when file-sharing wasn't supported. Dropped entirely:
-  // attaching any file via the Web Share API triggers a generic OS "allow
-  // access to photos and media" permission prompt on a lot of Android/
-  // Chrome combinations regardless of the file's real type, which read as
-  // broken/confusing to reps. Putting the CSV rows directly in the message
-  // (buildWhatsAppMessage already does this — see its comment) means
-  // there's nothing to grant and nothing that can silently fail to attach.
-  //
-  // Trade-off worth knowing about: very large orders (many line items) push
-  // the message length up, and wa.me/api.whatsapp.com links can get
-  // truncated by some browsers past roughly a few thousand characters. Not
-  // a concern at the order sizes this app is used for today.
+  // The order CSV is ALSO always embedded as text inside the message itself
+  // (buildWhatsAppMessage already does this — see its comment) regardless
+  // of whether the file attach below succeeds — so the data is always
+  // right there and copy-pasteable in the chat even on a phone/browser
+  // combination where file-sharing silently isn't supported, without
+  // depending on native file-attach working. The file attach is still
+  // attempted on top of that for phones that DO support it, since reps
+  // need an actual .csv file they can forward/import, not just message
+  // text — accepting that the OS's "allow access to photos and media"
+  // permission prompt is an inherent, one-time part of real file-sharing
+  // via the browser (not something removable while still attaching a
+  // real file), not a bug.
   const message = buildWhatsAppMessage(payload);
-  const waUrl = WHATSAPP_NUMBER
-    ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
-    : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-  window.open(waUrl, '_blank');
+  const csvBlob = buildCsvBlob(payload);
+  const fileName = orderFileName(payload);
+
+  let shareOutcome = 'shared'; // 'shared' | 'downloaded' | 'cancelled'
+  try{
+    const file = new File([csvBlob], fileName, {type:'text/csv'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({ files:[file], text: message, title:'MyFitness Order' });
+      shareOutcome = 'shared';
+    } else {
+      shareOutcome = 'downloaded';
+      downloadBlob(csvBlob, fileName);
+      const waUrl = WHATSAPP_NUMBER
+        ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+      window.open(waUrl, '_blank');
+    }
+  } catch(err){
+    if(err && err.name === 'AbortError'){
+      // rep cancelled the native share sheet — the order still counts as
+      // submitted (already recorded in Step A above regardless of what
+      // happens here). The message text (with the CSV embedded) is still
+      // available via "Send yourself a copy" below.
+      shareOutcome = 'cancelled';
+    } else {
+      console.error(err);
+      shareOutcome = 'downloaded';
+      downloadBlob(csvBlob, fileName);
+      const waUrl = WHATSAPP_NUMBER
+        ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+      window.open(waUrl, '_blank');
+    }
+  }
 
   btn.textContent = original; btn.disabled = false;
   state.isSubmitting = false;
@@ -2788,11 +2817,22 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   const verb = isEditingThisOrder ? 'updated' : 'submitted';
   resetForm();
 
-  let statusMsg = `✅ Order ${submittedOrderNo} ${verb} successfully — WhatsApp opened with the order details and CSV`;
-  if(!sheetOk){
-    statusMsg += ' (sheet sync failed, but WhatsApp still went out)';
+  // Build the final status toast from what ACTUALLY happened (shareOutcome
+  // + sheetOk) rather than always reporting plain success — a fallback-
+  // download order would otherwise look identical to a fully-automatic one.
+  let statusMsg;
+  if(shareOutcome === 'cancelled'){
+    statusMsg = `Order ${submittedOrderNo} ${verb}, but the WhatsApp share was cancelled before sending. Use "Send yourself a copy" below, or tap Submit again to resend it.`;
+  } else {
+    statusMsg = `✅ Order ${submittedOrderNo} ${verb} successfully`;
+    if(shareOutcome === 'downloaded'){
+      statusMsg += ` — CSV "${fileName}" was saved to your device (the order details/CSV text are still in the WhatsApp message). Attach the file yourself if needed; this phone/browser can't attach files automatically.`;
+    }
+    if(!sheetOk){
+      statusMsg += ' (sheet sync failed, but WhatsApp/CSV still went out)';
+    }
   }
-  toast(statusMsg, sheetOk ? 2600 : 7000);
+  toast(statusMsg, (shareOutcome === 'shared' && sheetOk) ? 2600 : 7000);
   // Offer the rep their own copy of the exact same item/SKU/total details,
   // on WhatsApp, for personal reference — see showSelfCopyBanner() above
   // for why this is a tap-to-send button rather than an auto-opened
