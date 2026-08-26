@@ -1320,7 +1320,7 @@ function rowsToInventory(rows){
     const totalAvailRaw = pickCol(r, ['Total Available Quantity','Available Quantity']);
     if(totalAvailRaw !== ''){
       const qty = csvNum(totalAvailRaw, 0); // blank/invalid → 0, never breaks the page
-      const locationName = normSpace(pickCol(r, ['Fulfillment Location Name','Location','Warehouse']));
+      const locationName = normSpace(pickCol(r, ['Fulfillment Location Name','Primary Fulfillment Location Name','Location','Warehouse']));
       g.all += qty;
       if(locationName.includes('bhiwandi')) g.bhiwandi += qty;
       else if(locationName.includes('ggn')) g.ggn += qty;
