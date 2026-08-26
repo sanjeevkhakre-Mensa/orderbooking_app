@@ -1292,28 +1292,68 @@ function rowsToProductsSupplement(rows){
 // timestamp on every row) so the app can tell "sheet loaded fine" apart
 // from "sheet loaded fine but the daily script hasn't actually run
 // recently" — the two would otherwise look identical.
+// Handles two source layouts, detected per row (never mixed within the same
+// sheet in practice):
+//  1. The raw Increff "Storage → Batch Inventory Available for Sales - OMS"
+//     export, pasted in manually. This is BATCH-level, not SKU-level — the
+//     same Style can appear across many rows (one per batch/location), each
+//     with its own "Total Available Quantity". Those must be SUMMED per
+//     style, not just read from the last row seen, or stock is undercounted.
+//     Location is bucketed from "Fulfillment Location Name" (values like
+//     "wms_bhiwandi_offline"/"wms_ggn_offline" — the same strings the app's
+//     own Fulfilment Location dropdown already uses).
+//  2. The richer, pre-aggregated layout InventorySync.gs writes (one row per
+//     style already, with Bhiwandi Qty/GGN Qty/Booked Qty/Remaining
+//     Inventory columns) — see LIVE_INVENTORY_SETUP_GUIDE.md. Kept working
+//     so switching back to that automated flow later needs no changes here.
 function rowsToInventory(rows){
-  return rows.map(r=>{
-    const style = pickCol(r, ['Style Code','Style','SKU','style_id']);
-    if(!style || style.trim().toUpperCase()==='TOTAL') return null;
-    const bhiwandi = csvNum(pickCol(r, ['Bhiwandi Qty','Bhiwandi','b2b_mumbai','WMS Bhiwandi']), 0);
-    const ggn = csvNum(pickCol(r, ['GGN Qty','GGN','b2b_ggn','Gurgaon','WMS GGN']), 0);
-    const all = bhiwandi + ggn;
+  const groups = {};
+  rows.forEach(r=>{
+    const style = String(pickCol(r, ['Style Code','Style','SKU','style_id'])).trim();
+    if(!style || style.toUpperCase()==='TOTAL') return; // blank / grand-total row — skip, not fatal
+
+    if(!groups[style]){
+      groups[style] = { style, bhiwandi:0, ggn:0, all:0, booked:0, remainingExplicit:null, skuName:'', syncStatus:'', syncedAt:null };
+    }
+    const g = groups[style];
+
+    const totalAvailRaw = pickCol(r, ['Total Available Quantity','Available Quantity']);
+    if(totalAvailRaw !== ''){
+      const qty = csvNum(totalAvailRaw, 0); // blank/invalid → 0, never breaks the page
+      const locationName = normSpace(pickCol(r, ['Fulfillment Location Name','Location','Warehouse']));
+      g.all += qty;
+      if(locationName.includes('bhiwandi')) g.bhiwandi += qty;
+      else if(locationName.includes('ggn')) g.ggn += qty;
+    } else {
+      g.bhiwandi += csvNum(pickCol(r, ['Bhiwandi Qty','Bhiwandi','b2b_mumbai','WMS Bhiwandi']), 0);
+      g.ggn += csvNum(pickCol(r, ['GGN Qty','GGN','b2b_ggn','Gurgaon','WMS GGN']), 0);
+      g.all = g.bhiwandi + g.ggn;
+    }
+
+    if(!g.skuName){
+      const desc = pickCol(r, ['SKU Name','SKU Description','Product','Description']);
+      if(desc) g.skuName = desc;
+    }
+    if(!g.syncStatus){
+      const status = pickCol(r, ['Sync Status','Status']);
+      if(status) g.syncStatus = status;
+    }
+    const bookedRaw = pickCol(r, ['Booked Qty','Booked']);
+    if(bookedRaw !== '') g.booked += csvNum(bookedRaw, 0);
+    const remainingRaw = pickCol(r, ['Remaining Inventory','Remaining','Available Stock']);
+    if(remainingRaw !== '' && g.remainingExplicit === null) g.remainingExplicit = csvNum(remainingRaw, null);
+
     const syncedRaw = pickCol(r, ['Last Sync Date & Time','Last Synced','Last Updated','Synced At']);
     const syncedMs = syncedRaw ? Date.parse(syncedRaw) : NaN;
-    // Booked Qty / Remaining Inventory come from InventorySync.gs's "Live
-    // Inventory" tab (see LIVE_INVENTORY_SETUP_GUIDE.md) — fall back to "not
-    // booked yet" so a Live Inventory sheet without these columns still
-    // works exactly as before.
-    const booked = csvNum(pickCol(r, ['Booked Qty','Booked']), 0);
-    const remaining = csvNum(pickCol(r, ['Remaining Inventory','Remaining','Available Stock']), Math.max(0, all - booked));
-    return {
-      style, bhiwandi, ggn, all, booked, remaining,
-      skuName: pickCol(r, ['SKU Name','Product','Description']),
-      syncStatus: pickCol(r, ['Sync Status','Status']),
-      syncedAt: isNaN(syncedMs) ? null : syncedMs
-    };
-  }).filter(Boolean);
+    if(!isNaN(syncedMs)) g.syncedAt = syncedMs;
+  });
+
+  return Object.values(groups).map(g=>({
+    style: g.style, bhiwandi: g.bhiwandi, ggn: g.ggn, all: g.all,
+    booked: g.booked,
+    remaining: g.remainingExplicit !== null ? g.remainingExplicit : Math.max(0, g.all - g.booked),
+    skuName: g.skuName, syncStatus: g.syncStatus, syncedAt: g.syncedAt
+  }));
 }
 
 function masterCacheKey(tab){ return 'masterData_' + tab; }
