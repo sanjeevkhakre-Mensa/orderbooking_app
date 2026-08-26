@@ -1868,36 +1868,19 @@ els.orderNo.value = getNextOrderNo();
 // users didn't need to see; the field simply can't be edited now.
 
 // Rep Mobile Number identifies WHO is placing orders from this device, not
-// who the order is for. It's not a Step 1 form field the rep fills in on
-// every order — it's captured ONCE, automatically, via ensureRepMobile()
-// the first time an order is actually submitted from this device, then
-// reused silently for every order after that (see the Submit handler).
+// who the order is for. Not a required Step 1 form field, and — as of this
+// change — never blocks or prompts on submission either; a device only has
+// one once it's been set some other way (there's currently no UI for that,
+// so in practice this is always blank until a future feature sets it). Any
+// feature that depends on it (the "WhatsApp Me a Copy" self-copy banner)
+// degrades gracefully to just not offering itself when it's blank, rather
+// than the app requiring it up front the first time someone uses it.
 function getRepMobile(){
   try{ return localStorage.getItem('repMobile') || ''; } catch(e){ return ''; }
 }
 
 function setRepMobile(value){
   try{ localStorage.setItem('repMobile', value); } catch(e){ /* non-fatal */ }
-}
-
-// Returns a saved 10-digit mobile number, prompting for it (once) if this
-// device doesn't have one yet. Returns '' if the rep cancels the prompt or
-// never enters a valid number — the Submit handler treats that the same
-// as any other missing required field and blocks submission.
-function ensureRepMobile(){
-  const existing = getRepMobile();
-  if(existing) return existing;
-  for(let attempt=0; attempt<3; attempt++){
-    const raw = window.prompt('One-time setup: enter your mobile number so orders sent from this device can be traced back to you. You will not be asked again.');
-    if(raw === null) return ''; // rep cancelled
-    const digitsOnly = raw.replace(/\D/g,'').slice(0,10);
-    if(digitsOnly.length === 10){
-      setRepMobile(digitsOnly);
-      return digitsOnly;
-    }
-    toast('Please enter a valid 10-digit mobile number');
-  }
-  return '';
 }
 
 function toast(msg, durationMs){
@@ -2582,6 +2565,10 @@ let selfCopyMessage = '';
 let selfCopyRepMobile = '';
 
 function showSelfCopyBanner(message, repMobile){
+  // Nothing to send to — this device has no saved mobile number (no longer
+  // captured/required on first submission), so don't offer a button that
+  // would just be a dead end when tapped.
+  if(!repMobile) return;
   selfCopyMessage = message;
   selfCopyRepMobile = repMobile;
   if(els.selfCopyBanner) els.selfCopyBanner.classList.remove('hidden');
@@ -2593,7 +2580,7 @@ function hideSelfCopyBanner(){
 
 // Indian mobile numbers only (matches WHATSAPP_NUMBER's existing "91 +
 // 10 digits" convention elsewhere in this file) — repMobile is stored as a
-// bare 10-digit number (see ensureRepMobile()), so the country code is
+// bare 10-digit number (see getRepMobile()), so the country code is
 // added here rather than asked of the rep a second time.
 els.btnSendSelfCopy.addEventListener('click', ()=>{
   if(!selfCopyRepMobile){ hideSelfCopyBanner(); return; }
@@ -2663,16 +2650,11 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
     return;
   }
 
-  // Guard #4: capture the rep's mobile number, once ever, right here at the
-  // moment of submission — not as a Step 1 field the rep has to fill in on
-  // every order. Already-captured devices skip straight through silently;
-  // this only prompts the very first time an order goes out from a phone.
-  const repMobile = ensureRepMobile();
-  if(!repMobile){
-    toast('Mobile number is required to submit an order');
-    return;
-  }
-  payload.repMobile = repMobile;
+  // Rep Mobile Number: read silently if this device already has one saved
+  // some other way, but never prompt for it or block submission on it —
+  // a first-time user should never hit a mobile-number gate just to place
+  // their first order. See getRepMobile()'s comment for what this affects.
+  payload.repMobile = getRepMobile();
 
   // Stamp the exact submit time now, once, so the Order History sheet, the
   // WhatsApp message, and this device's local Order History all agree on
