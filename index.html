@@ -1510,15 +1510,22 @@ async function loadMasterData(opts){
     loadOneTab('productsGT', MASTER_DATA_URLS.productsGT, rowsToProductsGT,
       data => { PRODUCT_MASTERS['General Trade'].skus = data; }, FALLBACK_SKUS_GT),
     loadOneTab('productsSupplement', MASTER_DATA_URLS.productsSupplement, rowsToProductsSupplement,
-      data => { PRODUCT_MASTERS['Supplement'].skus = data; }, FALLBACK_SKUS_SUPPLEMENT),
-    // Inventory is optional — an unconfigured/blank URL is a normal, expected
-    // state (not an error), and deliberately excluded from the CORE_MASTER_TABS
-    // used by the top status bar below so rollout of this feature doesn't
-    // make the bar claim "partially connected" for shops that haven't set up
-    // the Live Inventory tab yet.
-    loadOneTab('inventory', MASTER_DATA_URLS.inventory, rowsToInventory,
-      applyInventoryRows, [])
+      data => { PRODUCT_MASTERS['Supplement'].skus = data; }, FALLBACK_SKUS_SUPPLEMENT)
   ]);
+  // Inventory is optional — an unconfigured/blank URL is a normal, expected
+  // state (not an error), and deliberately excluded from the CORE_MASTER_TABS
+  // used by the top status bar below so rollout of this feature doesn't
+  // make the bar claim "partially connected" for shops that haven't set up
+  // the Live Inventory tab yet.
+  //
+  // Loaded AFTER the two Product Master tabs above, not alongside them in
+  // the same Promise.all — rowsToInventory()'s EAN-pivoted-format handling
+  // matches SKUs via the Product Master, which must already hold live data
+  // by then. The inventory CSV is small and fetches fast, so running it
+  // concurrently very reliably won the race and matched against stale
+  // fallback SKUs instead, silently zeroing out every match.
+  await loadOneTab('inventory', MASTER_DATA_URLS.inventory, rowsToInventory,
+    applyInventoryRows, []);
   renderMasterDataStatus();
   // Re-render anything already on screen so newly-loaded prices/names/
   // customers show up immediately rather than only after the next click.
