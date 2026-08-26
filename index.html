@@ -2506,16 +2506,18 @@ function formatScanIdentifier(ean){
 }
 
 // ============================================================================
-// ORDER CSV — a single file, human-readable, one row per Accepted line item
-// plus a Grand Total. Columns trimmed to exactly what was asked for — note
-// this means it NO LONGER carries the full DOFSOSKU column set (Price and
-// PO Qty were explicitly removed here), so if the downstream import system
-// still needs those, it will need a separate export again.
+// ORDER CSV — a single file, human-readable, one row per Accepted line item.
+// Columns trimmed to exactly what was asked for — note this means it NO
+// LONGER carries the full DOFSOSKU column set (Price and PO Qty were
+// explicitly removed here), so if the downstream import system still needs
+// those, it will need a separate export again. No order-level summary/
+// Grand Total rows — also explicitly removed; that figure is still shown
+// on-screen (Review step) and in the WhatsApp message, just not in this file.
 //
 // Only Accepted lines are included (Rejected ones dropped entirely) — with
-// the Line Status/Rejection Reason columns gone, there'd be no way to tell
-// a rejected line apart from a real one, so showing it at all would
-// misrepresent the order rather than merely omit detail.
+// no Line Status column, there'd be no way to tell a rejected line apart
+// from a real one, so showing it at all would misrepresent the order rather
+// than merely omit detail.
 // ============================================================================
 function buildCsvRows(payload){
   const headers = [
@@ -2533,15 +2535,6 @@ function buildCsvRows(payload){
       l.unitPrice, l.priceType, l.gstAmount, l.lineTotal
     ]);
   });
-
-  // Order-level summary, appended as label/value pairs rather than forced
-  // into the line-item columns above — the Grand Total (and the figures
-  // that make it up) apply to the whole order, not any single line.
-  rows.push([]);
-  rows.push(['Total Order Value (Before GST)', payload.totalBeforeGst]);
-  rows.push(['Total Discount Given', payload.totalDiscount]);
-  rows.push(['Total GST Amount', payload.totalGst]);
-  rows.push(['GRAND TOTAL (Net Payable)', payload.netOrderValue]);
 
   return rows;
 }
