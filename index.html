@@ -2537,7 +2537,12 @@ function safeFileNamePart(s){
 }
 
 function orderFileName(payload){
-  return `${safeFileNamePart(payload.customerName)}_${payload.orderNo||'order'}.csv`;
+  // Net Order Value in the filename itself (e.g.
+  // "ABC_Distributor_SO-20260826-014_2729.16.csv") so the amount can be
+  // visually tallied against the order just from the filename, without
+  // having to open the file or the WhatsApp message first.
+  const amountPart = payload.netOrderValue ? `_${payload.netOrderValue}` : '';
+  return `${safeFileNamePart(payload.customerName)}_${payload.orderNo||'order'}${amountPart}.csv`;
 }
 
 function buildWhatsAppMessage(payload){
