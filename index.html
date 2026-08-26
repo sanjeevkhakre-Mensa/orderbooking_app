@@ -2071,10 +2071,17 @@ function openAddPanel(style){
   els.addPanel.innerHTML = `
     <div class="ap-title">${s.style} — ${s.desc}</div>
     <div class="ap-desc">MRP ₹${s.mrp} · Case pack ${s.casepack} · ${s.brand ? 'Brand '+s.brand : 'Category '+(s.category||'—')}</div>
-    <div class="qty-stepper">
-      <button type="button" id="apMinus">−</button>
-      <input type="number" id="apQty" value="${defaultQty}" min="0">
-      <button type="button" id="apPlus">+</button>
+    <div class="field" style="margin-bottom:6px;">
+      <label># Boxes <span class="opt">1 box = ${s.casepack} pcs</span></label>
+      <input type="number" id="apBoxes" min="0" step="1" value="${Math.round((defaultQty / s.casepack) * 100) / 100}">
+    </div>
+    <div class="field" style="margin-bottom:0;">
+      <label>Total Qty (pcs)</label>
+      <div class="qty-stepper" style="margin:4px 0 0;">
+        <button type="button" id="apMinus">−</button>
+        <input type="number" id="apQty" value="${defaultQty}" min="0">
+        <button type="button" id="apPlus">+</button>
+      </div>
     </div>
     <div class="qty-note" id="apNote"></div>
     <div class="inv-check unknown" id="apInvCheck" hidden></div>
@@ -2096,11 +2103,25 @@ function openAddPanel(style){
   `;
 
   const qtyInput = document.getElementById('apQty');
+  const boxesInput = document.getElementById('apBoxes');
   const priceInput = document.getElementById('apPrice');
   const discountInput = document.getElementById('apDiscount');
   const note = document.getElementById('apNote');
   const preview = document.getElementById('apPreview');
   const invBox = document.getElementById('apInvCheck');
+
+  // Boxes ↔ pcs stay in sync both ways — typing a box count fills in the
+  // pcs total (boxes × case pack), and editing pcs directly (or the +/−
+  // stepper, which already moves by a full case pack) updates the box
+  // count to match, so neither field silently goes stale.
+  function setQtyFromBoxes(){
+    const boxes = parseFloat(boxesInput.value) || 0;
+    qtyInput.value = Math.round(boxes * s.casepack * 100) / 100;
+  }
+  function setBoxesFromQty(){
+    const qty = parseFloat(qtyInput.value) || 0;
+    boxesInput.value = qty ? Math.round((qty / s.casepack) * 100) / 100 : '';
+  }
 
   // Live Inventory Check — advisory only (does not block Add to Order).
   // Looks up LIVE_INVENTORY (keyed by style code, independent of Sales
@@ -2174,14 +2195,15 @@ function openAddPanel(style){
     preview.innerHTML = `Taxable <b>₹${r.taxableValue.toFixed(2)}</b> · GST <b>₹${r.gstAmount.toFixed(2)}</b> · Line Total <b>${fmtMoney(r.lineTotal)}</b>`;
   }
   refresh();
-  qtyInput.addEventListener('input', refresh);
+  boxesInput.addEventListener('input', ()=>{ setQtyFromBoxes(); refresh(); });
+  qtyInput.addEventListener('input', ()=>{ setBoxesFromQty(); refresh(); });
   priceInput.addEventListener('input', refresh);
   discountInput.addEventListener('input', refresh);
   document.getElementById('apMinus').addEventListener('click', ()=>{
-    qtyInput.value = Math.max(0, (parseFloat(qtyInput.value)||0) - s.casepack); refresh();
+    qtyInput.value = Math.max(0, (parseFloat(qtyInput.value)||0) - s.casepack); setBoxesFromQty(); refresh();
   });
   document.getElementById('apPlus').addEventListener('click', ()=>{
-    qtyInput.value = (parseFloat(qtyInput.value)||0) + s.casepack; refresh();
+    qtyInput.value = (parseFloat(qtyInput.value)||0) + s.casepack; setBoxesFromQty(); refresh();
   });
   document.getElementById('apCancel').addEventListener('click', closeAddPanel);
   document.getElementById('apAdd').addEventListener('click', ()=>{
