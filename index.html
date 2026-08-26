@@ -2494,13 +2494,24 @@ function csvField(v){
 // isn't something a downstream order/PO system should ever receive; it stays
 // visible in the on-screen Review step and the WhatsApp message instead.
 // PO Qty has no separate field in this form, so it mirrors Ordered Qty.
+// Matches the reference DOF-SO-SKU export format: a purely numeric Scan
+// Identifier (a real EAN/barcode) gets a trailing ".00", the same way Excel
+// displays a long numeric value stored as a float (e.g. "8904327601969.00")
+// — confirmed against a real sample. A non-numeric scan identifier (e.g.
+// "DLMJKS036_M") is left exactly as-is, also confirmed against a real
+// sample where no ".00" was present.
+function formatScanIdentifier(ean){
+  const s = String(ean||'').trim();
+  return /^\d+$/.test(s) ? s + '.00' : s;
+}
+
 // DOFSOSKU-format rows (Scan Identifier/Ordered Qty/Price Type/Price/PO Qty)
 // shared by both the downloadable CSV (Export CSV button) and the plain-text
 // version embedded directly in the WhatsApp message below.
 function buildCsvRows(payload){
   const rows = [['Scan Identifier','Ordered Qty','Price Type','Price','PO Qty']];
   payload.lines.filter(l=>l.validation==='Accepted').forEach(l=>{
-    rows.push([l.ean, l.qty, l.priceType, l.exportPrice, l.qty]);
+    rows.push([formatScanIdentifier(l.ean), l.qty, l.priceType, l.exportPrice, l.qty]);
   });
   return rows;
 }
