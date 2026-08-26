@@ -633,10 +633,6 @@
           </table>
         </div>
         <div class="inv-section">
-          <button type="button" class="inv-section-toggle" id="invHistoryToggle">▸ Sync History</button>
-          <div class="inv-section-body hidden" id="invHistoryBody"></div>
-        </div>
-        <div class="inv-section">
           <button type="button" class="inv-section-toggle" id="invUnmatchedToggle">▸ Unmatched SKUs</button>
           <div class="inv-section-body hidden" id="invUnmatchedBody"></div>
         </div>
@@ -899,11 +895,13 @@ const INVENTORY_STALE_AFTER_HOURS = 30;
 const MASTER_DATA_CACHE_MINUTES = 15;
 
 // Gmail Inventory Sync — see LIVE_INVENTORY_SETUP_GUIDE.md for one-time
-// setup. Leave URLs blank to keep the Inventory overlay's Sync History /
-// Unmatched SKUs sections and the manual Sync Now button quietly inactive;
-// the SKU table itself still works off MASTER_DATA_URLS.inventory above.
+// setup. Leave URLs blank to keep the Inventory overlay's Unmatched SKUs
+// section and the manual Sync Now button quietly inactive; the SKU table
+// itself still works off MASTER_DATA_URLS.inventory above. The Sync History
+// section was removed from the overlay entirely (its log of Gmail-sync
+// attempts stopped being relevant once inventory moved to the manual
+// Increff-paste workflow), so there's no URL for it anymore.
 const INVENTORY_SYNC_WEBAPP_URL = "";
-const SYNC_HISTORY_URL = "https://docs.google.com/spreadsheets/d/19K5gNBYtMYwPraUIIqJB06m1VwfdJq7AdGJUfgb9asA/export?format=csv&gid=32926594";
 // Unmatched SKUs tab gid not yet confirmed — leave blank until known
 // (the Inventory overlay already handles this gracefully as "not configured").
 const UNMATCHED_SKU_URL = "";
@@ -1083,7 +1081,7 @@ const els = {};
 ['orderNo','orderNoHint','customerName','buyerResults','salesChannel',
  'historyBtn','summaryBtn','historyOverlay','historyBody','historyClose','historyTitle',
  'inventoryBtn','inventoryOverlay','inventoryClose','invSyncStatus','invSearch','invTableBody',
- 'invHistoryToggle','invHistoryBody','invUnmatchedToggle','invUnmatchedBody','btnSyncInventoryNow',
+ 'invUnmatchedToggle','invUnmatchedBody','btnSyncInventoryNow',
  'location','marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
  'productSearch','comboResults',
  'addPanel','cartList','cartCount','miniSummary','msLines','msAccepted','msRejected','msValue',
@@ -1596,13 +1594,14 @@ if(els.btnRefreshMasterData){
 }
 
 // ============================================================================
-// INVENTORY OVERLAY — SKU-level stock view fed by Gmail Inventory Sync.
-// Read-only display over LIVE_INVENTORY (already fetched by loadMasterData
-// above) plus two extra CSV tabs (Sync History / Unmatched SKUs) published
+// INVENTORY OVERLAY — SKU-level stock view over LIVE_INVENTORY (already
+// fetched by loadMasterData above) plus an Unmatched SKUs CSV tab published
 // the same way as every other master-data tab. See
-// LIVE_INVENTORY_SETUP_GUIDE.md for how those tabs get populated.
+// LIVE_INVENTORY_SETUP_GUIDE.md for how that tab gets populated. (The Sync
+// History section that used to live here was removed — its log of Gmail-
+// sync attempts stopped being relevant once inventory moved to the manual
+// Increff-paste workflow.)
 // ============================================================================
-let invSyncHistory = [];
 let invUnmatchedSkus = [];
 
 // Looks up a description across BOTH channel masters (unlike findSkuByStyle,
@@ -1657,16 +1656,11 @@ function renderInvSyncStatusLine(){
     els.invSyncStatus.className = 'inv-syncstatus';
     return;
   }
-  const latestHistory = invSyncHistory[invSyncHistory.length - 1];
-  const failed = latestHistory && /fail/i.test(pickCol(latestHistory, ['Sync Status','Status']));
   const staleMs = liveInventorySyncedAt ? (Date.now() - liveInventorySyncedAt) : null;
   const isStale = staleMs !== null && staleMs > INVENTORY_STALE_AFTER_HOURS*3600*1000;
   const when = liveInventorySyncedAt ? new Date(liveInventorySyncedAt).toLocaleString('en-IN', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : 'never';
 
-  if(failed){
-    els.invSyncStatus.textContent = `Last Inventory Sync: ${when} — ⚠ last run failed, see Sync History below`;
-    els.invSyncStatus.className = 'inv-syncstatus bad';
-  } else if(isStale){
+  if(isStale){
     els.invSyncStatus.textContent = `Last Inventory Sync: ${when} — ⏱ may be out of date`;
     els.invSyncStatus.className = 'inv-syncstatus warn';
   } else {
@@ -1676,40 +1670,14 @@ function renderInvSyncStatusLine(){
 }
 
 async function loadInventorySideTabs(){
-  if(SYNC_HISTORY_URL){
-    try{
-      const text = await fetchCsv(SYNC_HISTORY_URL);
-      invSyncHistory = csvToObjects(text);
-    } catch(e){ console.error('Sync History fetch failed:', e); }
-  }
   if(UNMATCHED_SKU_URL){
     try{
       const text = await fetchCsv(UNMATCHED_SKU_URL);
       invUnmatchedSkus = csvToObjects(text);
     } catch(e){ console.error('Unmatched SKUs fetch failed:', e); }
   }
-  renderInvHistorySection();
   renderInvUnmatchedSection();
   renderInvSyncStatusLine();
-}
-
-function renderInvHistorySection(){
-  if(!els.invHistoryBody) return;
-  if(!SYNC_HISTORY_URL){
-    els.invHistoryBody.innerHTML = `<div class="inv-history-row"><span>Not configured — see LIVE_INVENTORY_SETUP_GUIDE.md</span></div>`;
-    return;
-  }
-  const rows = invSyncHistory.slice(-10).reverse();
-  if(rows.length === 0){ els.invHistoryBody.innerHTML = `<div class="inv-history-row"><span>No sync runs yet.</span></div>`; return; }
-  els.invHistoryBody.innerHTML = rows.map(r => {
-    const status = pickCol(r, ['Sync Status','Status']);
-    const runAt = pickCol(r, ['Sync Run At']);
-    const received = pickCol(r, ['SKUs Received']);
-    const matched = pickCol(r, ['SKUs Matched']);
-    const unmatched = pickCol(r, ['SKUs Unmatched']);
-    const err = pickCol(r, ['Error Details']);
-    return `<div class="inv-history-row"><span>${runAt} — ${status}${err ? ' ('+err+')' : ''}</span><span>${matched}/${received} matched, ${unmatched} unmatched</span></div>`;
-  }).join('');
 }
 
 function renderInvUnmatchedSection(){
@@ -1727,12 +1695,6 @@ function renderInvUnmatchedSection(){
   }).join('');
 }
 
-if(els.invHistoryToggle){
-  els.invHistoryToggle.addEventListener('click', ()=>{
-    els.invHistoryBody.classList.toggle('hidden');
-    els.invHistoryToggle.textContent = (els.invHistoryBody.classList.contains('hidden') ? '▸' : '▾') + ' Sync History';
-  });
-}
 if(els.invUnmatchedToggle){
   els.invUnmatchedToggle.addEventListener('click', ()=>{
     els.invUnmatchedBody.classList.toggle('hidden');
