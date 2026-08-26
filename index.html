@@ -2494,18 +2494,29 @@ function csvField(v){
 // isn't something a downstream order/PO system should ever receive; it stays
 // visible in the on-screen Review step and the WhatsApp message instead.
 // PO Qty has no separate field in this form, so it mirrors Ordered Qty.
-function buildCsvBlob(payload){
+// DOFSOSKU-format rows (Scan Identifier/Ordered Qty/Price Type/Price/PO Qty)
+// shared by both the downloadable CSV (Export CSV button) and the plain-text
+// version embedded directly in the WhatsApp message below.
+function buildCsvRows(payload){
   const rows = [['Scan Identifier','Ordered Qty','Price Type','Price','PO Qty']];
   payload.lines.filter(l=>l.validation==='Accepted').forEach(l=>{
     rows.push([l.ean, l.qty, l.priceType, l.exportPrice, l.qty]);
   });
+  return rows;
+}
+
+function buildCsvBlob(payload){
   // CRLF line endings are the RFC 4180 standard and several strict mobile
   // CSV/Excel viewers only lay data out into proper columns when they see
   // \r\n rather than a bare \n. Prefixing a UTF-8 BOM (via the
   // escape below) makes those same apps detect the encoding correctly
   // instead of guessing wrong and showing the raw text as one unsplit column.
-  const csv = rows.map(r=>r.map(csvField).join(',')).join('\r\n');
+  const csv = buildCsvRows(payload).map(r=>r.map(csvField).join(',')).join('\r\n');
   return new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});
+}
+
+function buildCsvText(payload){
+  return buildCsvRows(payload).map(r=>r.map(csvField).join(',')).join('\n');
 }
 
 // Turns a customer name into a filesystem-safe filename fragment (strips
@@ -2544,6 +2555,18 @@ function buildWhatsAppMessage(payload){
   if(rejected.length){
     msg += `\n⚠️ Rejected Lines:\n`;
     rejected.forEach(l=> msg += `- ${l.style}: ${l.reason}\n`);
+  }
+  // The order CSV, inline as text (WhatsApp's ```…``` renders it monospace)
+  // rather than as a separate attached file — attaching any file via the
+  // Web Share API triggers a generic OS "allow access to photos and media"
+  // permission prompt on a lot of Android/Chrome combinations regardless of
+  // the file's real type, which was confusing reps into thinking something
+  // was broken. This way the CSV rows are always right there in the chat,
+  // copy-pasteable, with nothing to grant and nothing that can silently fail
+  // to attach. Only included when there's at least one Accepted line, same
+  // as the file version — an all-rejected order has nothing to export.
+  if(accepted.length){
+    msg += `\n*Order CSV (DOFSOSKU format):*\n\`\`\`\n${buildCsvText(payload)}\n\`\`\`\n`;
   }
   msg += `\nGenerated via MyFitness Order Booking Form`;
   return msg;
@@ -2719,56 +2742,29 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   let sheetOk = true;
   try{ await postToSheet(payload); } catch(err){ sheetOk = false; console.error('Sheet sync failed', err); }
 
-  // Step C: open WhatsApp with the order details (native share sheet on
-  // mobile when available, otherwise a CSV download + wa.me link). This
-  // runs LAST, on purpose — see the comment on Step A above.
+  // Step C: open WhatsApp with the order details AND the order CSV, both as
+  // plain message text — no file attachment. This runs LAST, on purpose —
+  // see the comment on Step A above.
+  //
+  // Previously this tried navigator.share({files:[csvBlob]}) first (a real
+  // WhatsApp file attachment), falling back to a browser download + plain
+  // wa.me link only when file-sharing wasn't supported. Dropped entirely:
+  // attaching any file via the Web Share API triggers a generic OS "allow
+  // access to photos and media" permission prompt on a lot of Android/
+  // Chrome combinations regardless of the file's real type, which read as
+  // broken/confusing to reps. Putting the CSV rows directly in the message
+  // (buildWhatsAppMessage already does this — see its comment) means
+  // there's nothing to grant and nothing that can silently fail to attach.
+  //
+  // Trade-off worth knowing about: very large orders (many line items) push
+  // the message length up, and wa.me/api.whatsapp.com links can get
+  // truncated by some browsers past roughly a few thousand characters. Not
+  // a concern at the order sizes this app is used for today.
   const message = buildWhatsAppMessage(payload);
-  const csvBlob = buildCsvBlob(payload);
-  const fileName = orderFileName(payload);
-
-  // Whether the CSV actually went out as a real WhatsApp attachment (via
-  // the phone's native share sheet) or only as a browser download the rep
-  // has to attach themselves. navigator.canShare({files:[...]}) support for
-  // CSV/text files varies a lot across Android/iOS browser versions and
-  // in-app/PWA WebViews — it can silently be unavailable even on a phone
-  // that supports Web Share for other file types. Previously this was
-  // invisible to the rep: the WhatsApp message still opened either way, so
-  // a fallback-download order LOOKED identical to a fully-automatic one,
-  // and reps had no idea the CSV never actually reached the chat. The
-  // final status toast below now reflects whichever of these three
-  // actually happened, instead of always claiming plain success.
-  let shareOutcome = 'shared'; // 'shared' | 'downloaded' | 'cancelled'
-
-  try{
-    const file = new File([csvBlob], fileName, {type:'text/csv'});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({ files:[file], text: message, title:'MyFitness Order' });
-      shareOutcome = 'shared';
-    } else {
-      shareOutcome = 'downloaded';
-      downloadBlob(csvBlob, fileName);
-      const waUrl = WHATSAPP_NUMBER
-        ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
-        : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-      window.open(waUrl, '_blank');
-    }
-  } catch(err){
-    if(err && err.name === 'AbortError'){
-      // user cancelled the native share sheet — the order still counts as
-      // submitted, matching the original behaviour (it's already recorded
-      // in Step A above regardless of what happens here). The rep saw the
-      // share sheet (file was attached and ready) and chose not to send.
-      shareOutcome = 'cancelled';
-    } else {
-      console.error(err);
-      shareOutcome = 'downloaded';
-      downloadBlob(csvBlob, fileName);
-      const waUrl = WHATSAPP_NUMBER
-        ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
-        : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-      window.open(waUrl, '_blank');
-    }
-  }
+  const waUrl = WHATSAPP_NUMBER
+    ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
+    : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+  window.open(waUrl, '_blank');
 
   btn.textContent = original; btn.disabled = false;
   state.isSubmitting = false;
@@ -2781,27 +2777,11 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   const verb = isEditingThisOrder ? 'updated' : 'submitted';
   resetForm();
 
-  // Build the final status toast from what ACTUALLY happened (shareOutcome
-  // + sheetOk) rather than always reporting plain success — see the
-  // shareOutcome comment above for why this matters: a fallback-download
-  // order used to look identical to a fully-automatic one.
-  let statusMsg;
-  if(shareOutcome === 'cancelled'){
-    statusMsg = `Order ${submittedOrderNo} ${verb}, but the WhatsApp share was cancelled before sending. Use "Send yourself a copy" below, or tap Submit again to resend it.`;
-  } else {
-    statusMsg = `✅ Order ${submittedOrderNo} ${verb} successfully`;
-    if(shareOutcome === 'downloaded'){
-      statusMsg += ` — CSV "${fileName}" was saved to your device. Open WhatsApp and attach it yourself; this phone/browser can't attach files automatically.`;
-    }
-    if(!sheetOk){
-      statusMsg += ' (sheet sync failed, but WhatsApp/CSV still went out)';
-    }
+  let statusMsg = `✅ Order ${submittedOrderNo} ${verb} successfully — WhatsApp opened with the order details and CSV`;
+  if(!sheetOk){
+    statusMsg += ' (sheet sync failed, but WhatsApp still went out)';
   }
-  // Give the longer "please attach it yourself" / "share cancelled"
-  // messages more time on screen than the default 2.6s — they're
-  // instructions the rep actually needs to read and act on, not just a
-  // quick confirmation blip.
-  toast(statusMsg, (shareOutcome === 'shared' && sheetOk) ? 2600 : 7000);
+  toast(statusMsg, sheetOk ? 2600 : 7000);
   // Offer the rep their own copy of the exact same item/SKU/total details,
   // on WhatsApp, for personal reference — see showSelfCopyBanner() above
   // for why this is a tap-to-send button rather than an auto-opened
