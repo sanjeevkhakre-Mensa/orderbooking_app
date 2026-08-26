@@ -812,10 +812,6 @@
       <div class="card" style="display:flex; flex-direction:column; gap:10px;">
         <button class="btn btn-whatsapp" id="btnSubmitWA">📤 Submit &amp; Send to WhatsApp</button>
         <div class="btn-row">
-          <button class="btn btn-outline" id="btnExport">⬇ Export CSV</button>
-          <button class="btn btn-outline" id="btnPrint">🖨 Print</button>
-        </div>
-        <div class="btn-row">
           <button class="btn btn-ghost" id="btnEmail">✉ Email (optional)</button>
         </div>
         <div style="text-align:center;"><span class="sheet-status off" id="sheetStatus">Sheet sync: not configured</span></div>
@@ -2880,17 +2876,6 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   showSelfCopyBanner(message, payload.repMobile);
 });
 
-document.getElementById('btnExport').addEventListener('click', ()=>{
-  const payload = buildOrderPayload();
-  if(payload.lines.length===0){ toast('No order lines to export'); return; }
-  if(!payload.lines.some(l=>l.validation==='Accepted')){
-    toast('Every product line is rejected — nothing valid to export');
-    return;
-  }
-  downloadBlob(buildCsvBlob(payload), orderFileName(payload));
-});
-
-document.getElementById('btnPrint').addEventListener('click', ()=> window.print());
 
 document.getElementById('btnEmail').addEventListener('click', ()=>{
   const payload = buildOrderPayload();
