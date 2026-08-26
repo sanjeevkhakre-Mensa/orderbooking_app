@@ -2545,7 +2545,11 @@ function orderFileName(payload){
   return `${safeFileNamePart(payload.customerName)}_${payload.orderNo||'order'}${amountPart}.csv`;
 }
 
-function buildWhatsAppMessage(payload){
+// opts.includeCsv (default true) controls whether the raw CSV rows get
+// embedded in the message text — see the comment where it's used below for
+// why this needs to be OFF when a real file is being attached alongside it.
+function buildWhatsAppMessage(payload, opts){
+  const includeCsv = !(opts && opts.includeCsv === false);
   const accepted = payload.lines.filter(l=>l.validation==='Accepted');
   const rejected = payload.lines.filter(l=>l.validation==='REJECTED');
 
@@ -2573,15 +2577,17 @@ function buildWhatsAppMessage(payload){
     rejected.forEach(l=> msg += `- ${l.style}: ${l.reason}\n`);
   }
   // The order CSV, inline as text (WhatsApp's ```…``` renders it monospace)
-  // rather than as a separate attached file — attaching any file via the
-  // Web Share API triggers a generic OS "allow access to photos and media"
-  // permission prompt on a lot of Android/Chrome combinations regardless of
-  // the file's real type, which was confusing reps into thinking something
-  // was broken. This way the CSV rows are always right there in the chat,
-  // copy-pasteable, with nothing to grant and nothing that can silently fail
-  // to attach. Only included when there's at least one Accepted line, same
-  // as the file version — an all-rejected order has nothing to export.
-  if(accepted.length){
+  // — but ONLY when includeCsv is on. The Submit handler passes
+  // includeCsv:false for the copy of the message it hands to
+  // navigator.share() alongside the real attached file: that text becomes
+  // the file's CAPTION in WhatsApp, and a long caption (order details +
+  // the full CSV rows again, redundant with the file itself) was pushing
+  // WhatsApp to split the share into two separate messages instead of one
+  // file-with-caption. The full version (CSV included) is still used for
+  // the no-file-support fallback and the "send yourself a copy" feature,
+  // neither of which ever attaches a real file — there the CSV text is the
+  // only copy of that data that reaches WhatsApp at all.
+  if(accepted.length && includeCsv){
     msg += `\n*Order CSV (DOFSOSKU format):*\n\`\`\`\n${buildCsvText(payload)}\n\`\`\`\n`;
   }
   msg += `\nGenerated via MyFitness Order Booking Form`;
@@ -2775,7 +2781,16 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   // permission prompt is an inherent, one-time part of real file-sharing
   // via the browser (not something removable while still attaching a
   // real file), not a bug.
+  // Two versions of the message: the full one (CSV rows included as text)
+  // is what "Send yourself a copy" uses and what goes out when there's no
+  // file attached at all — the only copy of that data reaching WhatsApp in
+  // that case. The share-caption version leaves the CSV rows out, since
+  // that text becomes the attached file's CAPTION in WhatsApp — a long
+  // caption (order details + the full CSV again, redundant with the file
+  // itself) was pushing WhatsApp to split the share into two separate
+  // messages instead of one file-with-caption.
   const message = buildWhatsAppMessage(payload);
+  const shareCaption = buildWhatsAppMessage(payload, {includeCsv:false});
   const csvBlob = buildCsvBlob(payload);
   const fileName = orderFileName(payload);
 
@@ -2783,7 +2798,7 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   try{
     const file = new File([csvBlob], fileName, {type:'text/csv'});
     if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({ files:[file], text: message, title:'MyFitness Order' });
+      await navigator.share({ files:[file], text: shareCaption, title:'MyFitness Order' });
       shareOutcome = 'shared';
     } else {
       shareOutcome = 'downloaded';
@@ -2797,8 +2812,8 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
     if(err && err.name === 'AbortError'){
       // rep cancelled the native share sheet — the order still counts as
       // submitted (already recorded in Step A above regardless of what
-      // happens here). The message text (with the CSV embedded) is still
-      // available via "Send yourself a copy" below.
+      // happens here). The full message text (with the CSV embedded) is
+      // still available via "Send yourself a copy" below.
       shareOutcome = 'cancelled';
     } else {
       console.error(err);
