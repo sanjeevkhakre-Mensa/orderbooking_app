@@ -2521,7 +2521,7 @@ function formatScanIdentifier(ean){
 // ============================================================================
 function buildCsvRows(payload){
   const headers = [
-    'Order No', 'Order Date', 'Customer / Buyer Name', 'Sales Channel',
+    'Order No', 'Order Date', 'Sales Channel',
     'Scan Identifier', 'Style / SKU Code', 'Ordered Qty', 'MRP',
     'Unit Price (Excl. GST)', 'Price Type', 'GST Amount', 'Line Item Total'
   ];
@@ -2530,7 +2530,7 @@ function buildCsvRows(payload){
 
   payload.lines.filter(l=>l.validation==='Accepted').forEach(l=>{
     rows.push([
-      payload.orderNo || '', orderDate, payload.customerName || '', payload.salesChannel || '',
+      payload.orderNo || '', orderDate, payload.salesChannel || '',
       formatScanIdentifier(l.ean), l.style || '', l.qty, l.mrp || '',
       l.unitPrice, l.priceType, l.gstAmount, l.lineTotal
     ]);
