@@ -2469,7 +2469,7 @@ function buildOrderPayload(){
     lines: lines.map(l=>{
       const pt = priceTypeFor(l.sku, l.unitPrice);
       return {
-        style:l.sku.style, desc:l.sku.desc, ean:l.sku.ean, qty:l.qty,
+        style:l.sku.style, desc:l.sku.desc, ean:l.sku.ean, mrp:l.sku.mrp, qty:l.qty,
         unitPrice:l.unitPrice.toFixed(2), discount:l.discountAmt.toFixed(2),
         gstAmount:l.gstAmount.toFixed(2), lineTotal:l.lineTotal.toFixed(2),
         validation:l.validation, reason:l.reason||'',
@@ -2505,14 +2505,64 @@ function formatScanIdentifier(ean){
   return /^\d+$/.test(s) ? s + '.00' : s;
 }
 
-// DOFSOSKU-format rows (Scan Identifier/Ordered Qty/Price Type/Price/PO Qty)
-// shared by both the downloadable CSV (Export CSV button) and the plain-text
-// version embedded directly in the WhatsApp message below.
+// ============================================================================
+// ORDER CSV — a single file that's both a full, human-readable order
+// document AND still contains the exact DOFSOSKU-format columns (Scan
+// Identifier, Ordered Qty, Price Type, Price, PO Qty — same names, same
+// values) the downstream import system needs. One file only, per request —
+// no separate narrow-format export alongside it. Every line item is fully
+// identified (not just by Scan Identifier), priced, and totalled, plus a
+// Grand Total for the whole order — a sales rep or the central team can
+// open this directly without cross-referencing anything else.
+//
+// Assumption worth confirming: this assumes the import system reads by
+// column NAME (or knows to look for its 5 columns among others), not by
+// fixed column position — since those 5 columns are no longer the only
+// ones in the file. If the import system strictly requires ONLY those 5
+// columns in that exact order with nothing else present, this will need a
+// dedicated export path again.
+//
+// "Sales Person Name" has no real data source in this app today — there's
+// no name field anywhere, only a device-level mobile number (repMobile),
+// and even that's no longer actively collected since the first-time prompt
+// for it was removed. Using it here as a best-effort stand-in, labelled
+// honestly as "(Mobile)" rather than pretending it's a name.
+//
+// Includes every line (Accepted AND Rejected, via Line Status) so nothing
+// a sales rep attempted is silently hidden if a dispute comes up later —
+// only Accepted lines count toward the totals/Grand Total, matching how
+// the rest of the app already treats rejected lines.
+// ============================================================================
 function buildCsvRows(payload){
-  const rows = [['Scan Identifier','Ordered Qty','Price Type','Price','PO Qty']];
-  payload.lines.filter(l=>l.validation==='Accepted').forEach(l=>{
-    rows.push([formatScanIdentifier(l.ean), l.qty, l.priceType, l.exportPrice, l.qty]);
+  const headers = [
+    'Order No', 'Order Date', 'Sales Person (Mobile)', 'Customer / Buyer Name',
+    'Sales Channel', 'Fulfilment Location',
+    'Scan Identifier', 'Product Name', 'Style / SKU Code', 'Ordered Qty', 'MRP',
+    'Unit Price (Excl. GST)', 'Price Type', 'Price', 'PO Qty',
+    'Discount', 'GST Amount', 'Line Item Total', 'Line Status', 'Rejection Reason'
+  ];
+  const rows = [headers];
+  const orderDate = payload.submittedAt ? formatHistoryDate(payload.submittedAt) : '';
+
+  payload.lines.forEach(l=>{
+    rows.push([
+      payload.orderNo || '', orderDate, payload.repMobile || '', payload.customerName || '',
+      payload.salesChannel || '', payload.location || '',
+      formatScanIdentifier(l.ean), l.desc || '', l.style || '', l.qty, l.mrp || '',
+      l.unitPrice, l.priceType, l.exportPrice, l.qty,
+      l.discount, l.gstAmount, l.lineTotal, l.validation, l.reason || ''
+    ]);
   });
+
+  // Order-level summary, appended as label/value pairs rather than forced
+  // into the line-item columns above — the Grand Total (and the figures
+  // that make it up) apply to the whole order, not any single line.
+  rows.push([]);
+  rows.push(['Total Order Value (Before GST)', payload.totalBeforeGst]);
+  rows.push(['Total Discount Given', payload.totalDiscount]);
+  rows.push(['Total GST Amount', payload.totalGst]);
+  rows.push(['GRAND TOTAL (Net Payable)', payload.netOrderValue]);
+
   return rows;
 }
 
@@ -2848,7 +2898,7 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   } else {
     statusMsg = `✅ Order ${submittedOrderNo} ${verb} successfully`;
     if(shareOutcome === 'downloaded'){
-      statusMsg += ` — CSV "${fileName}" was saved to your device (the order details/CSV text are still in the WhatsApp message). Attach the file yourself if needed; this phone/browser can't attach files automatically.`;
+      statusMsg += ` — CSV "${fileName}" was saved to your device (the order details/CSV text are still in the WhatsApp message). Attach it yourself if needed; this phone/browser can't attach files automatically.`;
     }
     if(!sheetOk){
       statusMsg += ' (sheet sync failed, but WhatsApp/CSV still went out)';
@@ -2869,8 +2919,7 @@ document.getElementById('btnExport').addEventListener('click', ()=>{
     toast('Every product line is rejected — nothing valid to export');
     return;
   }
-  const blob = buildCsvBlob(payload);
-  downloadBlob(blob, orderFileName(payload));
+  downloadBlob(buildCsvBlob(payload), orderFileName(payload));
 });
 
 document.getElementById('btnPrint').addEventListener('click', ()=> window.print());
