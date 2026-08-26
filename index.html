@@ -1298,34 +1298,95 @@ function rowsToProductsSupplement(rows){
 // timestamp on every row) so the app can tell "sheet loaded fine" apart
 // from "sheet loaded fine but the daily script hasn't actually run
 // recently" — the two would otherwise look identical.
-// Handles two source layouts, detected per row (never mixed within the same
-// sheet in practice):
-//  1. The raw Increff "Storage → Batch Inventory Available for Sales - OMS"
-//     export, pasted in manually. This is BATCH-level, not SKU-level — the
-//     same Style can appear across many rows (one per batch/location), each
-//     with its own "Total Available Quantity". Those must be SUMMED per
-//     style, not just read from the last row seen, or stock is undercounted.
-//     Location is bucketed from "Fulfillment Location Name" (values like
-//     "wms_bhiwandi_offline"/"wms_ggn_offline" — the same strings the app's
-//     own Fulfilment Location dropdown already uses).
-//  2. The richer, pre-aggregated layout InventorySync.gs writes (one row per
+// Same alias-matching as pickCol(), but returns the matched COLUMN NAME
+// instead of its value — needed below to exclude the SKU-identifier column
+// when summing "every other column" as per-location quantities.
+function pickColName(row, aliases){
+  const keys = Object.keys(row);
+  for(const alias of aliases){
+    const norm = alias.toLowerCase().replace(/[^a-z0-9]/g,'');
+    const key = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g,'') === norm);
+    if(key !== undefined && row[key] !== '') return key;
+  }
+  return null;
+}
+
+function normalizeEan(v){ return String(v||'').replace(/[^0-9]/g,''); }
+
+// Built from whatever's currently in PRODUCT_MASTERS (live-synced data if
+// already loaded, fallback data otherwise — never empty), so the pivoted
+// Increff export below (keyed by EAN, no Style column at all) can still be
+// matched to a real SKU the same way every other inventory layout is.
+function eanToStyleMap(){
+  const map = {};
+  Object.keys(PRODUCT_MASTERS).forEach(key=>{
+    PRODUCT_MASTERS[key].skus.forEach(s=>{
+      const ean = normalizeEan(s.ean);
+      if(ean) map[ean] = s.style;
+    });
+  });
+  return map;
+}
+
+function newInventoryGroup(style){
+  return { style, bhiwandi:0, ggn:0, all:0, booked:0, remainingExplicit:null, skuName:'', syncStatus:'', syncedAt:null };
+}
+
+// Handles three source layouts, detected per row (never mixed within the
+// same sheet in practice):
+//  1. The pivoted Increff per-SKU-by-location export — one row per EAN
+//     ("Each Client SKU ID"), one column per warehouse (e.g.
+//     "wms_bhiwandi_offline"). No Style column at all, so the SKU is
+//     resolved via the Product Master's EAN field instead. Any location
+//     column not recognized as Bhiwandi/GGN (e.g. a Bangalore warehouse)
+//     still counts toward the style's total, just not the location-scoped
+//     breakdown — there's no UI location for it to scope to anyway.
+//  2. The raw Increff "Storage → Batch Inventory Available for Sales - OMS"
+//     batch-level export. The same Style can appear across many rows (one
+//     per batch/location), each with its own "Total Available Quantity" —
+//     summed per style, not just read from the last row seen, or stock is
+//     undercounted. Location comes from "Fulfillment Location Name" /
+//     "Primary Fulfillment Location Name".
+//  3. The richer, pre-aggregated layout InventorySync.gs writes (one row per
 //     style already, with Bhiwandi Qty/GGN Qty/Booked Qty/Remaining
 //     Inventory columns) — see LIVE_INVENTORY_SETUP_GUIDE.md. Kept working
 //     so switching back to that automated flow later needs no changes here.
 function rowsToInventory(rows){
   const groups = {};
+  let eanMap = null; // built lazily — only the pivoted layout needs it
+
   rows.forEach(r=>{
-    const style = String(pickCol(r, ['Style Code','Style','SKU','style_id'])).trim();
+    const styleDirect = String(pickCol(r, ['Style Code','Style','SKU','style_id'])).trim();
+    const eanColName = styleDirect ? null : pickColName(r, ['Each Client SKU ID','EAN','Client SKU Id / EAN','Scan Identifier','Barcode']);
+
+    if(eanColName){
+      if(!eanMap) eanMap = eanToStyleMap();
+      const style = eanMap[normalizeEan(r[eanColName])];
+      if(!style) return; // EAN not found in Product Master — can't attribute safely, skip rather than guess
+
+      if(!groups[style]) groups[style] = newInventoryGroup(style);
+      const g = groups[style];
+      Object.keys(r).forEach(colName=>{
+        if(colName === eanColName) return;
+        const qty = csvNum(r[colName], 0); // blank/invalid → 0, never breaks the page
+        if(!qty) return;
+        const loc = normSpace(colName);
+        g.all += qty;
+        if(loc.includes('bhiwandi')) g.bhiwandi += qty;
+        else if(loc.includes('ggn')) g.ggn += qty;
+      });
+      return;
+    }
+
+    const style = styleDirect;
     if(!style || style.toUpperCase()==='TOTAL') return; // blank / grand-total row — skip, not fatal
 
-    if(!groups[style]){
-      groups[style] = { style, bhiwandi:0, ggn:0, all:0, booked:0, remainingExplicit:null, skuName:'', syncStatus:'', syncedAt:null };
-    }
+    if(!groups[style]) groups[style] = newInventoryGroup(style);
     const g = groups[style];
 
     const totalAvailRaw = pickCol(r, ['Total Available Quantity','Available Quantity']);
     if(totalAvailRaw !== ''){
-      const qty = csvNum(totalAvailRaw, 0); // blank/invalid → 0, never breaks the page
+      const qty = csvNum(totalAvailRaw, 0);
       const locationName = normSpace(pickCol(r, ['Fulfillment Location Name','Primary Fulfillment Location Name','Location','Warehouse']));
       g.all += qty;
       if(locationName.includes('bhiwandi')) g.bhiwandi += qty;
