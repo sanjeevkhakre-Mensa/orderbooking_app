@@ -2811,13 +2811,10 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   // Two versions of the message: the full one (CSV rows included as text)
   // is what "Send yourself a copy" uses and what goes out when there's no
   // file attached at all — the only copy of that data reaching WhatsApp in
-  // that case. The share-caption version leaves the CSV rows out, since
-  // that text becomes the attached file's CAPTION in WhatsApp — a long
-  // caption (order details + the full CSV again, redundant with the file
-  // itself) was pushing WhatsApp to split the share into two separate
-  // messages instead of one file-with-caption.
+  // that case. When the file DOES attach successfully, no message/caption
+  // is sent at all — the CSV itself now has every detail needed, so a
+  // separate text message would just be redundant.
   const message = buildWhatsAppMessage(payload);
-  const shareCaption = buildWhatsAppMessage(payload, {includeCsv:false});
   const csvBlob = buildCsvBlob(payload);
   const fileName = orderFileName(payload);
 
@@ -2825,7 +2822,7 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   try{
     const file = new File([csvBlob], fileName, {type:'text/csv'});
     if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({ files:[file], text: shareCaption, title:'MyFitness Order' });
+      await navigator.share({ files:[file], title:'MyFitness Order' });
       shareOutcome = 'shared';
     } else {
       shareOutcome = 'downloaded';
