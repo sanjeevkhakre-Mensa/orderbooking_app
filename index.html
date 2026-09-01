@@ -383,14 +383,10 @@
   }
   .add-panel .ap-title{ font-weight:800; font-size:13.5px; color:var(--ink); }
   .add-panel .ap-desc{ font-size:11.5px; color:#556; margin-bottom:8px; }
-  /* Quantity is fixed to exactly one case pack — the only control is this
-     checkbox, so there's nothing left to type or step through. */
-  .ap-case-checkbox{
-    display:flex; align-items:center; gap:8px; margin:8px 0 4px;
-    font-size:14px; font-weight:700; color:var(--ink); cursor:pointer;
-  }
-  .ap-case-checkbox input[type="checkbox"]{ width:20px; height:20px; cursor:pointer; }
-  .ap-qty-display{ font-size:12.5px; color:var(--muted); font-weight:600; }
+  /* Total Qty (pcs) is a plain computed display, not an input — this is
+     what actually makes it non-editable, rather than relying on a
+     disabled/readonly attribute a rep's browser might handle differently. */
+  .ap-qty-display{ font-size:16px; font-weight:800; color:var(--ink); margin-top:4px; }
   .qty-note{ font-size:11px; margin-top:2px; }
   .qty-note.ok{ color:var(--green-text); }
   .qty-note.warn{ color:var(--red-text); }
@@ -2345,11 +2341,12 @@ function openAddPanel(style){
   els.addPanel.innerHTML = `
     <div class="ap-title">${s.style} — ${s.desc}</div>
     <div class="ap-desc">MRP ₹${s.mrp} · Case pack ${s.casepack} · ${s.brand ? 'Brand '+s.brand : 'Category '+(s.category||'—')}</div>
+    <div class="field" style="margin-bottom:6px;">
+      <label># Boxes <span class="opt">1 box = ${s.casepack} pcs</span></label>
+      <input type="number" id="apBoxes" min="0" step="1" value="${Math.round((defaultQty / s.casepack) * 100) / 100}">
+    </div>
     <div class="field" style="margin-bottom:0;">
-      <label class="ap-case-checkbox">
-        <input type="checkbox" id="apCaseCheckbox" ${defaultQty===s.casepack ? 'checked' : ''}>
-        Order 1 case <span class="opt">(${s.casepack} pcs)</span>
-      </label>
+      <label>Total Qty (pcs)</label>
       <input type="hidden" id="apQty" value="${defaultQty}">
       <div class="ap-qty-display" id="apQtyDisplay"></div>
     </div>
@@ -2373,7 +2370,7 @@ function openAddPanel(style){
   `;
 
   const qtyInput = document.getElementById('apQty');
-  const caseCheckbox = document.getElementById('apCaseCheckbox');
+  const boxesInput = document.getElementById('apBoxes');
   const qtyDisplay = document.getElementById('apQtyDisplay');
   const priceInput = document.getElementById('apPrice');
   const discountInput = document.getElementById('apDiscount');
@@ -2381,14 +2378,15 @@ function openAddPanel(style){
   const preview = document.getElementById('apPreview');
   const invBox = document.getElementById('apInvCheck');
 
-  // Quantity is no longer free-typed — the only control is "Order 1 case",
-  // so it can only ever be exactly one case pack or nothing at all.
-  // qtyInput stays a hidden field (rather than removing it) so the rest of
-  // this function — refresh(), renderInvCheck(), the Add to Order handler
-  // — can keep reading qtyInput.value exactly as before; only how that
-  // value gets SET changed, from typing to checking a box.
-  function setQtyFromCheckbox(){
-    qtyInput.value = caseCheckbox.checked ? s.casepack : 0;
+  // Total Qty (pcs) is read-only, driven entirely by # Boxes — a rep can no
+  // longer type or step through pcs directly. qtyInput stays a hidden field
+  // (rather than removing it) so the rest of this function — refresh(),
+  // renderInvCheck(), the Add to Order handler — can keep reading
+  // qtyInput.value exactly as before; only how that value gets SET
+  // changed, from two-way-synced fields to one-way-computed from boxes.
+  function setQtyFromBoxes(){
+    const boxes = parseFloat(boxesInput.value) || 0;
+    qtyInput.value = Math.round(boxes * s.casepack * 100) / 100;
     qtyDisplay.textContent = 'Total Qty: ' + qtyInput.value + ' pcs';
   }
 
@@ -2453,20 +2451,23 @@ function openAddPanel(style){
     const price = parseFloat(priceInput.value) || 0;
     const discount = parseFloat(discountInput.value) || 0;
     const r = evaluateLine(s, qty, price, discount);
-    // Quantity can now only ever be 0 (unchecked) or exactly one case pack
-    // (checked) — the old "not a multiple of case pack" warning is no
-    // longer reachable, since there's no way to type an in-between value.
-    if(qty>0){
-      note.className='qty-note ok'; note.textContent = `✓ Valid — 1 case of ${s.casepack}`;
+    // Since Total Qty is always boxes × case pack now (never typed
+    // directly), it can still land on a fractional pcs value if boxes
+    // itself is fractional (e.g. 1.33 boxes of a 24-pack) — that's the one
+    // case the "not a multiple of case pack" warning below still covers.
+    if(qty>0 && qty % s.casepack === 0){
+      note.className='qty-note ok'; note.textContent = `✓ Valid — ${qty/s.casepack} case(s) of ${s.casepack}`;
+    } else if(qty>0){
+      note.className='qty-note warn'; note.textContent = `⚠ Not a whole number of cases — will be rejected`;
     } else {
-      note.className='qty-note warn'; note.textContent = `Check the box to order this product`;
+      note.className='qty-note warn'; note.textContent = `Enter the number of boxes`;
     }
     renderInvCheck(qty);
     preview.innerHTML = `Taxable <b>₹${r.taxableValue.toFixed(2)}</b> · GST <b>₹${r.gstAmount.toFixed(2)}</b> · Line Total <b>${fmtMoney(r.lineTotal)}</b>`;
   }
-  setQtyFromCheckbox();
+  setQtyFromBoxes();
   refresh();
-  caseCheckbox.addEventListener('change', ()=>{ setQtyFromCheckbox(); refresh(); });
+  boxesInput.addEventListener('input', ()=>{ setQtyFromBoxes(); refresh(); });
   priceInput.addEventListener('input', refresh);
   discountInput.addEventListener('input', refresh);
   document.getElementById('apCancel').addEventListener('click', closeAddPanel);
@@ -2474,7 +2475,7 @@ function openAddPanel(style){
     const qty = parseFloat(qtyInput.value) || 0;
     const price = parseFloat(priceInput.value) || 0;
     const discount = parseFloat(discountInput.value) || 0;
-    if(qty<=0){ toast('Check the box to order this product'); return; }
+    if(qty<=0){ toast('Enter the number of boxes'); return; }
     if(!(price>0)){ toast('Enter a unit price greater than 0'); return; }
     if(existing){ existing.qty = qty; existing.unitPrice = price; existing.discount = discount; }
     else { state.cart.push({style: s.style, qty, unitPrice: price, discount}); }
