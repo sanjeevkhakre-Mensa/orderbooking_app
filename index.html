@@ -440,14 +440,18 @@
   .cart-item.accepted{ border-color:#cfe9d3; background:#fafffb; }
   .ci-name{ font-weight:800; font-size:12.5px; color:var(--ink); }
   .ci-sub{ font-size:11px; color:var(--muted); margin-top:1px; }
-  .ci-fields{ display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin-top:8px; }
-  .ci-fields > div{ display:flex; flex-direction:column; gap:2px; }
+  /* flex, not grid — Qty is the only field left here now that Unit Price
+     and Discount both moved out, and a single grid column would stretch
+     it across the full card width instead of sizing to a sensible input
+     width. */
+  .ci-fields{ display:flex; gap:6px; margin-top:8px; }
+  .ci-fields > div{ display:flex; flex-direction:column; gap:2px; flex:0 0 110px; }
   .ci-fields label{ font-size:9.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.2px; }
   .ci-fields input{
     width:100%; text-align:center; padding:5px 2px; border:1.5px solid var(--border); border-radius:6px;
     font-weight:700; font-size:16px; min-height:34px;
   }
-  .ci-calc{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; font-size:11.5px; color:var(--muted); }
+  .ci-calc{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px 8px; margin-top:8px; font-size:11.5px; color:var(--muted); }
   .ci-value{ font-weight:800; font-size:12.5px; color:var(--ink); }
   .ci-badge{ font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:20px; text-transform:uppercase; letter-spacing:.2px; }
   .ci-badge.ok{ background:var(--green-bg); color:var(--green-text); }
@@ -828,7 +832,6 @@
         <h2>Order Value Summary</h2>
         <div class="review-recap">
           <div class="rr"><span>Total Order Value (Before GST)</span><span id="rvBeforeGst">₹0.00</span></div>
-          <div class="rr"><span>Total Discount Given</span><span id="rvDiscount">₹0.00</span></div>
           <div class="rr"><span>Total GST Amount</span><span id="rvGst">₹0.00</span></div>
         </div>
         <div class="totals-box">
@@ -1120,7 +1123,7 @@ const els = {};
  'productSearch','comboResults','btnScanBarcode','scannerOverlay','scannerClose','scannerVideo','scannerStatus','salesChannelHint',
  'addPanel','cartList','cartCount','miniSummary','msLines','msAccepted','msRejected','msValue',
  'rvLines','rvAccepted','rvRejected','rejectList','recapDetails','rvTotalValue',
- 'rvBeforeGst','rvDiscount','rvGst',
+ 'rvBeforeGst','rvGst',
  'statusLine','sheetStatus','btnBack','btnNext','navInfo','toast','stepper',
  'masterDataBar','masterDataText','btnRefreshMasterData',
  'editingBanner','editingBannerText','btnCancelEdit',
@@ -2354,7 +2357,8 @@ function openAddPanel(style){
     <div class="inv-check unknown" id="apInvCheck" hidden></div>
     <div class="field" style="margin-top:8px; margin-bottom:0;">
       <label>Unit Price (Excl. GST)</label>
-      <input type="number" id="apPrice" step="0.01" min="0" value="${defaultPrice}">
+      <input type="hidden" id="apPrice" value="${defaultPrice}">
+      <div class="ap-qty-display" id="apPriceDisplay">₹${defaultPrice}</div>
     </div>
     <div class="ap-preview" id="apPreview"></div>
     <div class="ap-actions">
@@ -2460,7 +2464,6 @@ function openAddPanel(style){
   setQtyFromBoxes();
   refresh();
   boxesInput.addEventListener('input', ()=>{ setQtyFromBoxes(); refresh(); });
-  priceInput.addEventListener('input', refresh);
   document.getElementById('apCancel').addEventListener('click', closeAddPanel);
   document.getElementById('apAdd').addEventListener('click', ()=>{
     const qty = parseFloat(qtyInput.value) || 0;
@@ -2533,7 +2536,6 @@ function renderCart(){
   els.rvAccepted.textContent = accepted;
   els.rvRejected.textContent = rejected;
   els.rvBeforeGst.textContent = fmtMoney(totalBeforeGst);
-  els.rvDiscount.textContent = fmtMoney(totalDiscount);
   els.rvGst.textContent = fmtMoney(totalGst);
   els.rvTotalValue.textContent = fmtMoney(netOrderValue);
 
@@ -2572,9 +2574,9 @@ function cartItemHtml(l){
       <div class="ci-sub">₹${l.sku.mrp} MRP · Case ${l.sku.casepack} · ${locLabel()||'—'}</div>
       <div class="ci-fields">
         <div><label>Qty</label><input type="number" class="mini-qty" value="${l.qty}" data-style="${styleAttr}"></div>
-        <div><label>Unit Price</label><input type="number" step="0.01" class="mini-price" value="${l.unitPrice}" data-style="${styleAttr}"></div>
       </div>
       <div class="ci-calc">
+        <span>Unit Price ₹${l.unitPrice}</span>
         <span>GST ₹${l.gstAmount.toFixed(2)}</span>
         <span class="ci-value">Total ${fmtMoney(l.lineTotal)}</span>
         <span class="ci-badge ${badgeClass}">${l.validation}</span>
@@ -2591,7 +2593,6 @@ document.addEventListener('input', (e)=>{
   const c = state.cart.find(c=>c.style===style);
   if(!c) return;
   if(e.target.classList.contains('mini-qty')){ c.qty = parseFloat(e.target.value)||0; }
-  else if(e.target.classList.contains('mini-price')){ c.unitPrice = parseFloat(e.target.value)||0; }
   else return;
   renderCart();
 });
