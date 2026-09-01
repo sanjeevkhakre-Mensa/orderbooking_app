@@ -655,7 +655,7 @@
         <div class="inv-table-wrap">
           <table class="inv-table">
             <thead>
-              <tr><th>SKU</th><th>Product</th><th>Latest Stock</th><th>Booked Qty</th><th>Available Stock</th><th>Last Updated</th></tr>
+              <tr><th>SKU</th><th>Product</th><th>Bhiwandi</th><th>GGN</th><th>BLR</th><th>Total Stock</th><th>Booked Qty</th><th>Available Stock</th><th>Last Updated</th></tr>
             </thead>
             <tbody id="invTableBody"></tbody>
           </table>
@@ -773,6 +773,7 @@
             <option value="all">All Locations</option>
             <option value="bhiwandi" selected>wms_bhiwandi_offline</option>
             <option value="ggn">wms_ggn_offline</option>
+            <option value="blr">wms_blr_offline</option>
           </select>
         </div>
         <div class="grid2" id="marginGT">
@@ -1374,18 +1375,21 @@ function eanToStyleMap(){
 }
 
 function newInventoryGroup(style){
-  return { style, bhiwandi:0, ggn:0, all:0, booked:0, remainingExplicit:null, skuName:'', syncStatus:'', syncedAt:null };
+  return { style, bhiwandi:0, ggn:0, blr:0, all:0, booked:0, remainingExplicit:null, skuName:'', syncStatus:'', syncedAt:null };
 }
 
-// Handles three source layouts, detected per row (never mixed within the
-// same sheet in practice):
-//  1. The pivoted Increff per-SKU-by-location export — one row per EAN
-//     ("Each Client SKU ID"), one column per warehouse (e.g.
-//     "wms_bhiwandi_offline"). No Style column at all, so the SKU is
-//     resolved via the Product Master's EAN field instead. Any location
-//     column not recognized as Bhiwandi/GGN (e.g. a Bangalore warehouse)
-//     still counts toward the style's total, just not the location-scoped
-//     breakdown — there's no UI location for it to scope to anyway.
+// Handles three source layouts, detected per row by its COLUMNS (never
+// mixed within the same sheet in practice):
+//  1. The pivoted Increff per-SKU-by-location export — one row per SKU, one
+//     column per warehouse (e.g. "wms_bhiwandi_offline"). Bhiwandi/GGN/BLR
+//     are the three UI-scoped locations; any other column still counts
+//     toward the style's total, just not a location-scoped breakdown. The
+//     SKU is usually identified by EAN ("Each Client SKU ID", resolved via
+//     the Product Master's EAN field), but the sheet has also been seen
+//     with a human-readable "Style" column added alongside the pivot
+//     columns as a VLOOKUP helper — detection here is keyed on the
+//     warehouse pivot columns being present at all, not on which
+//     identifier column comes with them, so either form works.
 //  2. The raw Increff "Storage → Batch Inventory Available for Sales - OMS"
 //     batch-level export. The same Style can appear across many rows (one
 //     per batch/location), each with its own "Total Available Quantity" —
@@ -1400,30 +1404,49 @@ function rowsToInventory(rows){
   const groups = {};
   let eanMap = null; // built lazily — only the pivoted layout needs it
 
-  rows.forEach(r=>{
-    const styleDirect = String(pickCol(r, ['Style Code','Style','SKU','style_id'])).trim();
-    const eanColName = styleDirect ? null : pickColName(r, ['Each Client SKU ID','EAN','Client SKU Id / EAN','Scan Identifier','Barcode']);
+  // A pivot row (layout 1) is identified by its COLUMNS — one per warehouse
+  // (wms_bhiwandi_offline etc.) — not by which identifier column happens to
+  // be present. The sheet has been seen with a human-readable "Style"
+  // column added alongside those pivot columns purely as a VLOOKUP helper;
+  // branching on "has a Style column" alone would wrongly send that row
+  // down the raw/pre-aggregated branch below (which expects columns named
+  // "Bhiwandi Qty" etc., not "wms_bhiwandi_offline") and silently zero out
+  // every quantity.
+  function pivotLocColNames(r){
+    return Object.keys(r).filter(k=>{
+      const loc = normSpace(k);
+      return loc.includes('bhiwandi') || loc.includes('ggn') || loc.includes('blr');
+    });
+  }
 
-    if(eanColName){
-      if(!eanMap) eanMap = eanToStyleMap();
-      const style = eanMap[normalizeEan(r[eanColName])];
-      if(!style) return; // EAN not found in Product Master — can't attribute safely, skip rather than guess
+  rows.forEach(r=>{
+    const locCols = pivotLocColNames(r);
+
+    if(locCols.length){
+      let style = String(pickCol(r, ['Style Code','Style','SKU','style_id'])).trim();
+      if(!style){
+        const eanColName = pickColName(r, ['Each Client SKU ID','EAN','Client SKU Id / EAN','Scan Identifier','Barcode']);
+        if(!eanColName) return;
+        if(!eanMap) eanMap = eanToStyleMap();
+        style = eanMap[normalizeEan(r[eanColName])];
+      }
+      if(!style || style.toUpperCase()==='TOTAL') return; // unresolved EAN, or a blank/grand-total row — skip, not fatal
 
       if(!groups[style]) groups[style] = newInventoryGroup(style);
       const g = groups[style];
-      Object.keys(r).forEach(colName=>{
-        if(colName === eanColName) return;
+      locCols.forEach(colName=>{
         const qty = csvNum(r[colName], 0); // blank/invalid → 0, never breaks the page
         if(!qty) return;
         const loc = normSpace(colName);
         g.all += qty;
         if(loc.includes('bhiwandi')) g.bhiwandi += qty;
         else if(loc.includes('ggn')) g.ggn += qty;
+        else if(loc.includes('blr')) g.blr += qty;
       });
       return;
     }
 
-    const style = styleDirect;
+    const style = String(pickCol(r, ['Style Code','Style','SKU','style_id'])).trim();
     if(!style || style.toUpperCase()==='TOTAL') return; // blank / grand-total row — skip, not fatal
 
     if(!groups[style]) groups[style] = newInventoryGroup(style);
@@ -1436,10 +1459,12 @@ function rowsToInventory(rows){
       g.all += qty;
       if(locationName.includes('bhiwandi')) g.bhiwandi += qty;
       else if(locationName.includes('ggn')) g.ggn += qty;
+      else if(locationName.includes('blr')) g.blr += qty;
     } else {
       g.bhiwandi += csvNum(pickCol(r, ['Bhiwandi Qty','Bhiwandi','b2b_mumbai','WMS Bhiwandi']), 0);
       g.ggn += csvNum(pickCol(r, ['GGN Qty','GGN','b2b_ggn','Gurgaon','WMS GGN']), 0);
-      g.all = g.bhiwandi + g.ggn;
+      g.blr += csvNum(pickCol(r, ['BLR Qty','BLR','b2b_blr','Bangalore','WMS BLR']), 0);
+      g.all = g.bhiwandi + g.ggn + g.blr;
     }
 
     if(!g.skuName){
@@ -1461,7 +1486,7 @@ function rowsToInventory(rows){
   });
 
   return Object.values(groups).map(g=>({
-    style: g.style, bhiwandi: g.bhiwandi, ggn: g.ggn, all: g.all,
+    style: g.style, bhiwandi: g.bhiwandi, ggn: g.ggn, blr: g.blr, all: g.all,
     booked: g.booked,
     remaining: g.remainingExplicit !== null ? g.remainingExplicit : Math.max(0, g.all - g.booked),
     skuName: g.skuName, syncStatus: g.syncStatus, syncedAt: g.syncedAt
@@ -1677,7 +1702,7 @@ function renderInventoryTable(){
     .sort((a,b) => a.inv.style.localeCompare(b.inv.style));
 
   if(rows.length === 0){
-    els.invTableBody.innerHTML = `<tr class="inv-empty-row"><td colspan="6">${Object.keys(LIVE_INVENTORY).length===0 ? 'No inventory data yet — run Sync Inventory Now or wait for the next scheduled sync.' : 'No SKUs match your search.'}</td></tr>`;
+    els.invTableBody.innerHTML = `<tr class="inv-empty-row"><td colspan="9">${Object.keys(LIVE_INVENTORY).length===0 ? 'No inventory data yet — run Sync Inventory Now or wait for the next scheduled sync.' : 'No SKUs match your search.'}</td></tr>`;
     return;
   }
 
@@ -1691,6 +1716,9 @@ function renderInventoryTable(){
     return `<tr>
       <td>${inv.style}</td>
       <td>${desc || '—'}</td>
+      <td>${fmtNum(inv.bhiwandi)}</td>
+      <td>${fmtNum(inv.ggn)}</td>
+      <td>${fmtNum(inv.blr)}</td>
       <td>${fmtNum(inv.all)}</td>
       <td>${fmtNum(inv.booked)}</td>
       <td class="${remainingCls}">${fmtNum(inv.remaining)}</td>
@@ -1916,6 +1944,7 @@ function locKey(){
   if(v==='all') return 'all';
   if(v==='bhiwandi') return 'bhiwandi';
   if(v==='ggn') return 'ggn';
+  if(v==='blr') return 'blr';
   return null;
 }
 function locLabel(){
@@ -2260,8 +2289,8 @@ function openAddPanel(style){
       return;
     }
     const lk = locKey();
-    const scoped = lk==='bhiwandi' || lk==='ggn';
-    const available = lk==='bhiwandi' ? inv.bhiwandi : lk==='ggn' ? inv.ggn : inv.all;
+    const scoped = lk==='bhiwandi' || lk==='ggn' || lk==='blr';
+    const available = lk==='bhiwandi' ? inv.bhiwandi : lk==='ggn' ? inv.ggn : lk==='blr' ? inv.blr : inv.all;
     const locSuffix = scoped ? ` (${locLabel()})` : '';
 
     let cls, status, extra = '';
