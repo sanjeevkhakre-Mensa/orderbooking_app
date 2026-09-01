@@ -1163,6 +1163,17 @@ fillMarginOptions(els.marginNONPB, 0.25, 0.45, 38);
 // swapping these references is enough to make the whole app "live".
 let BUYERS = FALLBACK_BUYERS.slice();
 
+// Sales Channel to auto-fill when a customer is picked from search — keyed
+// by the exact same "Name-City-State" label used in BUYERS, so the buyer
+// click handler can look a channel up with no extra parsing. Populated as
+// a side effect of rowsToCustomers() below (which stays the sole owner of
+// "how do we turn a Customer Master row into what the UI needs" — same
+// reasoning as BUYERS/PRODUCT_MASTERS being reassigned wholesale rather
+// than merged). Stays empty when the sheet has no Sales Channel column
+// (or a customer's value doesn't map to a known channel) — the field
+// simply isn't auto-filled for those, no different from today.
+let BUYER_CHANNELS = {};
+
 // Live Inventory Check — keyed by style code, independent of Sales Channel
 // (the same physical warehouse stock backs a style whether it's being sold
 // through the General Trade or Supplement catalog, so this is one flat
@@ -1276,14 +1287,37 @@ function pickCol(row, aliases){
 function csvNum(v, fallback){ const n = parseFloat(String(v).replace(/[₹,\s]/g,'')); return isNaN(n) ? fallback : n; }
 function csvInt(v, fallback){ const n = parseInt(String(v).replace(/[^\d.-]/g,''),10); return (isNaN(n) || n<=0) ? fallback : n; }
 
+// The Customer Master's channel column holds region-qualified GT values
+// ("South GT", "North GT", "West GT", ...) rather than the app's own two
+// flat channel names, since the sheet tracks sales region as well as
+// channel. Maps any of those down to exactly what <select id="salesChannel">
+// expects — 'General Trade' or 'Supplement' — or '' when the value doesn't
+// recognizably mean either (leaves the field to be picked manually, same
+// as a customer with no channel on file at all).
+function normalizeSalesChannel(raw){
+  const v = String(raw||'').trim();
+  if(!v) return '';
+  if(/supplement/i.test(v)) return 'Supplement';
+  if(/\bgt\b/i.test(v) || /general\s*trade/i.test(v)) return 'General Trade';
+  return '';
+}
+
 function rowsToCustomers(rows){
-  return rows.map(r=>{
+  // Side effect (see BUYER_CHANNELS' own comment): rebuilt fresh on every
+  // call, same "replaced wholesale, never merged" pattern as BUYERS itself.
+  const channels = {};
+  const labels = rows.map(r=>{
     const name = pickCol(r, ['Name','Customer Name','Customer','Buyer','Buyer Name']);
     if(!name) return null;
     const city = pickCol(r, ['City']);
     const state = pickCol(r, ['State']);
-    return [name, city, state].filter(Boolean).join('-');
+    const label = [name, city, state].filter(Boolean).join('-');
+    const channel = normalizeSalesChannel(pickCol(r, ['Sales_Channel','Sales Channel','Channel']));
+    if(channel) channels[label] = channel;
+    return label;
   }).filter(Boolean);
+  BUYER_CHANNELS = channels;
+  return labels;
 }
 
 function rowsToProductsGT(rows){
@@ -2190,6 +2224,17 @@ els.buyerResults.addEventListener('click', (e)=>{
   if(!item || !item.dataset.buyer) return;
   els.customerName.value = item.dataset.buyer;
   els.buyerResults.hidden = true;
+  // Auto-fill Sales Channel from the Customer Master, same as picking it
+  // by hand — dispatching 'change' (not just setting .value) so the
+  // existing channel-switch handler still clears any stale cart lines and
+  // updates which margin fields/product catalog are shown. Left untouched
+  // when this buyer has no recognized channel on file (see
+  // normalizeSalesChannel) rather than clearing a rep's own selection.
+  const channel = BUYER_CHANNELS[item.dataset.buyer];
+  if(channel && els.salesChannel.value !== channel){
+    els.salesChannel.value = channel;
+    els.salesChannel.dispatchEvent(new Event('change'));
+  }
   renderCart();
 });
 
