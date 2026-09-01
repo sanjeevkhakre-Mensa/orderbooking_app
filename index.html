@@ -761,6 +761,7 @@
             <option>General Trade</option>
             <option>Supplement</option>
           </select>
+          <span class="field-hint" id="salesChannelHint" hidden></span>
         </div>
       </div>
 
@@ -1121,7 +1122,7 @@ const els = {};
  'inventoryBtn','inventoryOverlay','inventoryClose','invSyncStatus','invSearch','invTableBody',
  'invUnmatchedToggle','invUnmatchedBody','btnSyncInventoryNow',
  'marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
- 'productSearch','comboResults','btnScanBarcode','scannerOverlay','scannerClose','scannerVideo','scannerStatus',
+ 'productSearch','comboResults','btnScanBarcode','scannerOverlay','scannerClose','scannerVideo','scannerStatus','salesChannelHint',
  'addPanel','cartList','cartCount','miniSummary','msLines','msAccepted','msRejected','msValue',
  'rvLines','rvAccepted','rvRejected','rejectList','recapDetails','rvTotalValue',
  'rvBeforeGst','rvDiscount','rvGst',
@@ -1173,6 +1174,30 @@ let BUYERS = FALLBACK_BUYERS.slice();
 // (or a customer's value doesn't map to a known channel) — the field
 // simply isn't auto-filled for those, no different from today.
 let BUYER_CHANNELS = {};
+
+// Customers who are allowed to keep picking Sales Channel by hand even
+// after it's been auto-filled — every other matched customer gets the
+// dropdown locked (disabled) once filled, so a rep can't accidentally
+// override what the Customer Master says. Matched by name only (fuzzy —
+// see namesRoughlyMatch), not by full Name-City-State label, since these
+// are specific named accounts regardless of which branch/city ordered.
+const CHANNEL_LOCK_EXEMPT_NAMES = ['JMD Enterprises', 'Muscleup The Nutrition house'];
+
+// Tolerant enough to match "JMD Enterprises" (as typed in the exemption
+// list above) against "Jmd Enterprise" (as it's actually spelled in the
+// Customer Master), and "Muscleup The Nutrition house" against "Muscleup -
+// The Nutrition House" — punctuation/case/spacing differences and a
+// singular-vs-plural trailing "s" shouldn't be able to silently defeat an
+// exemption someone configured by hand.
+function namesRoughlyMatch(a, b){
+  const norm = s => String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'').replace(/s$/,'');
+  const na = norm(a), nb = norm(b);
+  return !!na && !!nb && (na===nb || na.includes(nb) || nb.includes(na));
+}
+
+// Keyed the same way as BUYER_CHANNELS — populated alongside it in
+// rowsToCustomers().
+let BUYER_CHANNEL_LOCK_EXEMPT = {};
 
 // Live Inventory Check — keyed by style code, independent of Sales Channel
 // (the same physical warehouse stock backs a style whether it's being sold
@@ -1314,6 +1339,7 @@ function rowsToCustomers(rows){
   // auto-fill" apart from "this buyer genuinely spans two — don't guess,
   // let them pick."
   const channelsSeen = {};
+  const lockExempt = {};
   const labels = rows.map(r=>{
     const name = pickCol(r, ['Name','Customer Name','Customer','Buyer','Buyer Name']);
     if(!name) return null;
@@ -1325,6 +1351,7 @@ function rowsToCustomers(rows){
       if(!channelsSeen[label]) channelsSeen[label] = new Set();
       channelsSeen[label].add(channel);
     }
+    if(CHANNEL_LOCK_EXEMPT_NAMES.some(ex => namesRoughlyMatch(name, ex))) lockExempt[label] = true;
     return label;
   }).filter(Boolean);
 
@@ -1337,6 +1364,7 @@ function rowsToCustomers(rows){
     channels[label] = set.size === 1 ? [...set][0] : [...set].sort();
   });
   BUYER_CHANNELS = channels;
+  BUYER_CHANNEL_LOCK_EXEMPT = lockExempt;
   return labels;
 }
 
@@ -2216,7 +2244,34 @@ els.scannerOverlay.addEventListener('click', (e)=>{
 // ============================================================================
 // CUSTOMER NAME SEARCH (combobox over known buyers — free text still allowed)
 // ============================================================================
+function unlockSalesChannel(){
+  els.salesChannel.disabled = false;
+  if(els.salesChannelHint){ els.salesChannelHint.hidden = true; els.salesChannelHint.textContent = ''; }
+}
+// Locks the dropdown once it's been auto-filled so a rep can't accidentally
+// override what the Customer Master says — except for the small named list
+// in CHANNEL_LOCK_EXEMPT_NAMES, who keep it editable (still auto-filled as
+// a starting point, just not locked to it).
+function lockSalesChannelTo(channel, exempt){
+  els.salesChannel.value = channel;
+  els.salesChannel.dispatchEvent(new Event('change'));
+  if(exempt){
+    unlockSalesChannel();
+  } else {
+    els.salesChannel.disabled = true;
+    if(els.salesChannelHint){
+      els.salesChannelHint.hidden = false;
+      els.salesChannelHint.textContent = 'Locked to "' + channel + '" from the Customer Master.';
+    }
+  }
+}
+
 els.customerName.addEventListener('input', ()=>{
+  // Typing edits the name away from whichever buyer was last selected (if
+  // any) — unlock Sales Channel immediately rather than leaving it stuck
+  // disabled against a customer that may no longer be the one being
+  // searched for. It re-locks on its own if/when a suggestion is clicked.
+  unlockSalesChannel();
   const qRaw = normSpace(els.customerName.value);
   if(!qRaw){ els.buyerResults.hidden = true; els.buyerResults.innerHTML=''; return; }
   const tokens = qRaw.split(' ').filter(Boolean);
@@ -2260,12 +2315,15 @@ els.buyerResults.addEventListener('click', (e)=>{
   // from whichever customer was picked before this one.
   const channel = BUYER_CHANNELS[item.dataset.buyer];
   if(Array.isArray(channel)){
+    unlockSalesChannel();
     els.salesChannel.value = '';
     els.salesChannel.dispatchEvent(new Event('change'));
     toast('This customer orders through both ' + channel.join(' and ') + ' — select Sales Channel manually.');
-  } else if(channel && els.salesChannel.value !== channel){
-    els.salesChannel.value = channel;
-    els.salesChannel.dispatchEvent(new Event('change'));
+  } else if(channel){
+    lockSalesChannelTo(channel, !!BUYER_CHANNEL_LOCK_EXEMPT[item.dataset.buyer]);
+  } else {
+    // No channel on file for this buyer at all — nothing to lock to.
+    unlockSalesChannel();
   }
   renderCart();
 });
