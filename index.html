@@ -766,16 +766,6 @@
 
       <div class="card">
         <h2>Pricing &amp; Fulfilment</h2>
-        <div class="field">
-          <label>Fulfilment Location</label>
-          <select id="location" required>
-            <option value="">-- Select Location --</option>
-            <option value="all">All Locations</option>
-            <option value="bhiwandi" selected>wms_bhiwandi_offline</option>
-            <option value="ggn">wms_ggn_offline</option>
-            <option value="blr">wms_blr_offline</option>
-          </select>
-        </div>
         <div class="grid2" id="marginGT">
           <div class="field">
             <label>Margin % (MF)</label>
@@ -1130,7 +1120,7 @@ const els = {};
  'historyBtn','summaryBtn','historyOverlay','historyBody','historyClose','historyTitle',
  'inventoryBtn','inventoryOverlay','inventoryClose','invSyncStatus','invSearch','invTableBody',
  'invUnmatchedToggle','invUnmatchedBody','btnSyncInventoryNow',
- 'location','marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
+ 'marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
  'productSearch','comboResults','btnScanBarcode','scannerOverlay','scannerClose','scannerVideo','scannerStatus',
  'addPanel','cartList','cartCount','miniSummary','msLines','msAccepted','msRejected','msValue',
  'rvLines','rvAccepted','rvRejected','rejectList','recapDetails','rvTotalValue',
@@ -1948,19 +1938,14 @@ function toast(msg, durationMs){
   toast._t = setTimeout(()=>els.toast.classList.remove('show'), durationMs || 2600);
 }
 
-function locKey(){
-  const v = document.getElementById('location').value;
-  if(v==='all') return 'all';
-  if(v==='bhiwandi') return 'bhiwandi';
-  if(v==='ggn') return 'ggn';
-  if(v==='blr') return 'blr';
-  return null;
-}
-function locLabel(){
-  const sel = document.getElementById('location');
-  const opt = sel.options[sel.selectedIndex];
-  return opt ? opt.textContent : '';
-}
+// The Fulfilment Location field was removed from Order Setup — every order
+// is now booked against aggregate stock across all warehouses rather than
+// one selected location. Kept as functions (not inlined at each call site)
+// so the per-location stock-scoping code paths below and the order
+// payload's "location" field don't need to change shape; only what they
+// resolve to changed.
+function locKey(){ return 'all'; }
+function locLabel(){ return 'All Locations'; }
 
 // ============================================================================
 // PRICING / VALIDATION
@@ -2501,7 +2486,7 @@ document.addEventListener('click', (e)=>{
   }
 });
 
-[document.getElementById('location'), els.marginMF, els.marginPF, els.marginPB, els.marginNONPB].forEach(el=>{
+[els.marginMF, els.marginPF, els.marginPB, els.marginNONPB].forEach(el=>{
   el.addEventListener('input', ()=>{ renderCart(); });
   el.addEventListener('change', ()=>{ renderCart(); });
 });
@@ -3499,15 +3484,6 @@ function reportContentHtml(list, reportKey){
 // existing Submit flow to do the rest (see the Guard #3 edit-bypass and
 // saveOrderHistoryEntry's update-in-place logic).
 // ---------------------------------------------------------------------------
-function setLocationByLabel(label){
-  const sel = document.getElementById('location');
-  for(const opt of sel.options){
-    if(opt.textContent === label){ sel.value = opt.value; return; }
-  }
-  // No match (e.g. the label is blank on a very old entry) — leave
-  // whatever the select's default is rather than forcing an empty value.
-}
-
 function showEditingBanner(orderNo){
   if(!els.editingBanner) return;
   els.editingBannerText.textContent = `✎ Editing Order ${orderNo}`;
@@ -3525,7 +3501,9 @@ function loadOrderIntoWizard(order){
   els.customerName.value = order.customerName || '';
   els.salesChannel.value = order.salesChannel || '';
   els.salesChannel.dispatchEvent(new Event('change'));
-  setLocationByLabel(order.location);
+  // order.location is no longer restored — Fulfilment Location was removed
+  // from Order Setup and every order now books against aggregate stock
+  // (see locKey()/locLabel()), so there's nothing left to set here.
 
   // Rebuild cart lines (including any REJECTED ones, so the rep can see and
   // fix whatever didn't pass validation last time) from the saved order —
