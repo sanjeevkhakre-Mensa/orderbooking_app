@@ -1305,7 +1305,15 @@ function normalizeSalesChannel(raw){
 function rowsToCustomers(rows){
   // Side effect (see BUYER_CHANNELS' own comment): rebuilt fresh on every
   // call, same "replaced wholesale, never merged" pattern as BUYERS itself.
-  const channels = {};
+  // A handful of customers are genuinely listed twice under the exact same
+  // Name-City-State — once per channel they actually order through (e.g. a
+  // "North GT" row and a separate "Supplement" row for the same buyer).
+  // Collecting every distinct channel seen per label first (instead of
+  // just overwriting on each row) is what lets the click handler below
+  // tell "this buyer only ever orders through one channel, safe to
+  // auto-fill" apart from "this buyer genuinely spans two — don't guess,
+  // let them pick."
+  const channelsSeen = {};
   const labels = rows.map(r=>{
     const name = pickCol(r, ['Name','Customer Name','Customer','Buyer','Buyer Name']);
     if(!name) return null;
@@ -1313,9 +1321,21 @@ function rowsToCustomers(rows){
     const state = pickCol(r, ['State']);
     const label = [name, city, state].filter(Boolean).join('-');
     const channel = normalizeSalesChannel(pickCol(r, ['Sales_Channel','Sales Channel','Channel']));
-    if(channel) channels[label] = channel;
+    if(channel){
+      if(!channelsSeen[label]) channelsSeen[label] = new Set();
+      channelsSeen[label].add(channel);
+    }
     return label;
   }).filter(Boolean);
+
+  const channels = {};
+  Object.keys(channelsSeen).forEach(label=>{
+    const set = channelsSeen[label];
+    // One distinct channel → the value to auto-fill. More than one → an
+    // array instead of a string, which the buyer click handler treats as
+    // "ambiguous, leave it to the dropdown" rather than picking either one.
+    channels[label] = set.size === 1 ? [...set][0] : [...set].sort();
+  });
   BUYER_CHANNELS = channels;
   return labels;
 }
@@ -2230,8 +2250,20 @@ els.buyerResults.addEventListener('click', (e)=>{
   // updates which margin fields/product catalog are shown. Left untouched
   // when this buyer has no recognized channel on file (see
   // normalizeSalesChannel) rather than clearing a rep's own selection.
+  //
+  // A buyer listed under more than one channel (see rowsToCustomers) is
+  // genuinely ambiguous — guessing either one risks silently booking a
+  // Supplement order against the General Trade catalog or vice versa, so
+  // this resets the field to blank instead of auto-filling, which is what
+  // actually makes "-- Select --" (the dropdown) reappear for the rep to
+  // resolve by hand, rather than leaving a stale/unverified value in place
+  // from whichever customer was picked before this one.
   const channel = BUYER_CHANNELS[item.dataset.buyer];
-  if(channel && els.salesChannel.value !== channel){
+  if(Array.isArray(channel)){
+    els.salesChannel.value = '';
+    els.salesChannel.dispatchEvent(new Event('change'));
+    toast('This customer orders through both ' + channel.join(' and ') + ' — select Sales Channel manually.');
+  } else if(channel && els.salesChannel.value !== channel){
     els.salesChannel.value = channel;
     els.salesChannel.dispatchEvent(new Event('change'));
   }
