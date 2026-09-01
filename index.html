@@ -1434,6 +1434,15 @@ function rowsToInventory(rows){
 
       if(!groups[style]) groups[style] = newInventoryGroup(style);
       const g = groups[style];
+      // Same optional description column the raw/pre-aggregated branch
+      // below already handles — the pivot layout has since gained its own
+      // "SKU Description" column too, and the Inventory overlay already
+      // prefers this over the Product Master lookup when present (see
+      // renderInventoryTable's `inv.skuName || findSkuDescAnyChannel(...)`).
+      if(!g.skuName){
+        const desc = pickCol(r, ['SKU Name','SKU Description','Product','Description']);
+        if(desc) g.skuName = desc;
+      }
       locCols.forEach(colName=>{
         const qty = csvNum(r[colName], 0); // blank/invalid → 0, never breaks the page
         if(!qty) return;
