@@ -376,6 +376,29 @@
   }
   .scanner-status{ text-align:center; font-size:12.5px; color:var(--muted); margin-top:10px; padding:0 4px; }
 
+  /* ---------------- Image-Based SKU & Quantity Scan ---------------- */
+  .imgscan-row{ margin-top:0; margin-bottom:0; }
+  .imgscan-row .btn{ width:100%; }
+  .imgscan-status{
+    font-size:12px; color:var(--muted); text-align:center; padding:8px 4px;
+  }
+  .imgscan-results{
+    margin-top:10px; border:1.5px solid var(--border); border-radius:10px;
+    overflow:hidden;
+  }
+  .imgscan-group-label{
+    font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.2px;
+    color:var(--muted); background:#f7f9fa; padding:6px 10px;
+  }
+  .imgscan-row-item{
+    display:flex; justify-content:space-between; align-items:center; gap:8px;
+    padding:8px 10px; font-size:12px; border-top:1px solid var(--border);
+  }
+  .imgscan-row-item.ok{ color:var(--green-text); }
+  .imgscan-row-item.bad{ color:var(--red-text); cursor:pointer; }
+  .imgscan-row-item.bad:hover{ background:var(--red-bg); }
+  .imgscan-search-link{ font-weight:700; white-space:nowrap; }
+
   /* ---------------- Add-to-order panel ---------------- */
   .add-panel{
     border:1.5px solid var(--blue); border-radius:10px; padding:12px;
@@ -801,6 +824,18 @@
             <div class="combo-results" id="comboResults" hidden></div>
           </div>
         </div>
+        <!-- Image-Based SKU & Quantity Scan — hidden until IMAGE_SCAN_WEBAPP_URL
+             is configured (see IMAGE_SCAN_SETUP_GUIDE.md), same reasoning as
+             the barcode scan button staying hidden when unsupported. No
+             `capture` attribute on the file input so the OS shows its normal
+             chooser (camera OR photo library), matching "click/upload a
+             photo" rather than forcing camera-only. -->
+        <div class="field imgscan-row" id="imgScanRow" hidden>
+          <button type="button" class="btn btn-outline" id="btnImgScan">🖼️ Scan Order Photo</button>
+          <input type="file" id="imgScanFile" accept="image/*" hidden>
+        </div>
+        <div class="imgscan-status" id="imgScanStatus" hidden></div>
+        <div class="imgscan-results" id="imgScanResults" hidden></div>
         <div class="add-panel" id="addPanel" hidden></div>
       </div>
 
@@ -942,6 +977,14 @@ const INVENTORY_SYNC_WEBAPP_URL = "";
 // Unmatched SKUs tab gid not yet confirmed — leave blank until known
 // (the Inventory overlay already handles this gracefully as "not configured").
 const UNMATCHED_SKU_URL = "";
+
+// Image-Based SKU & Quantity Scan — see IMAGE_SCAN_SETUP_GUIDE.md for
+// one-time setup (Gemini API key, deploying apps-script/ImageOrderScan.gs
+// as its own Web App). Leave blank to keep the "📷 Scan Order Photo"
+// button in Search & Add Products hidden entirely, same reasoning as the
+// barcode scanner staying hidden when unsupported — a button that fails
+// on every tap is worse than no button.
+const IMAGE_SCAN_WEBAPP_URL = "";
 
 // When true, a line whose quantity exceeds Remaining Inventory is REJECTED
 // (blocking) instead of just shown as an advisory warning in the Add-to-
@@ -1121,6 +1164,7 @@ const els = {};
  'invUnmatchedToggle','invUnmatchedBody','btnSyncInventoryNow',
  'marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
  'productSearch','comboResults','btnScanBarcode','scannerOverlay','scannerClose','scannerVideo','scannerStatus','salesChannelHint',
+ 'imgScanRow','btnImgScan','imgScanFile','imgScanStatus','imgScanResults',
  'addPanel','cartList','cartCount','miniSummary','msLines','msAccepted','msRejected','msValue',
  'rvLines','rvAccepted','rvRejected','rejectList','recapDetails','rvTotalValue',
  'rvBeforeGst','rvGst',
@@ -2238,6 +2282,141 @@ els.scannerClose.addEventListener('click', closeScanner);
 els.scannerOverlay.addEventListener('click', (e)=>{
   if(e.target === els.scannerOverlay) closeScanner();
 });
+
+// ============================================================================
+// IMAGE-BASED SKU & QUANTITY SCAN — reads a photo (handwritten note,
+// printed list, or product packages) via a Gemini-backed Apps Script Web
+// App (see IMAGE_SCAN_SETUP_GUIDE.md), matches each detected product
+// against the currently active Product Master, and adds matches straight
+// into the cart with the detected quantity. Unmatched items are listed
+// separately so a rep can search and add them by hand — never silently
+// dropped. Hidden entirely until IMAGE_SCAN_WEBAPP_URL is configured, same
+// reasoning as the barcode scanner staying hidden when unsupported.
+// ============================================================================
+if(IMAGE_SCAN_WEBAPP_URL && els.imgScanRow){
+  els.imgScanRow.hidden = false;
+}
+
+function fileToBase64(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    // reader.result is a data: URL ("data:image/jpeg;base64,xxxx") — Gemini
+    // wants just the base64 payload, not the data: prefix.
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(new Error('Could not read that file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Scores a detected product-name string against one SKU using the exact
+// same style+desc+ean haystack the manual product search box already
+// matches against (see the #productSearch input handler above), so "what
+// would the rep have found by typing this" and "what the photo scanner
+// finds" stay consistent with each other rather than being two different
+// notions of a match.
+function scoreSkuMatch(detectedText, sku){
+  const haystack = normSpace(sku.style) + ' ' + normSpace(sku.desc) + ' ' + sku.ean;
+  const tokens = normSpace(detectedText).split(' ').filter(Boolean);
+  if(!tokens.length) return 0;
+  const hits = tokens.filter(t => haystack.includes(t)).length;
+  return hits / tokens.length; // fraction of the detected text's own tokens that were found
+}
+
+// Requires a clear majority of the detected text's tokens to actually
+// appear in a SKU before trusting the match — picking whichever SKU
+// scores highest even when nothing really matches would silently add the
+// wrong product to a real order, which is worse than routing it to "SKU
+// Not Found" for the rep to resolve by hand.
+const IMG_MATCH_MIN_SCORE = 0.6;
+
+function matchScannedProduct(detectedText){
+  const skus = activeSkus();
+  let best = null, bestScore = 0;
+  skus.forEach(sku=>{
+    const score = scoreSkuMatch(detectedText, sku);
+    if(score > bestScore){ bestScore = score; best = sku; }
+  });
+  return bestScore >= IMG_MATCH_MIN_SCORE ? best : null;
+}
+
+function renderImgScanResults(matched, unmatched){
+  if(!matched.length && !unmatched.length){ els.imgScanResults.hidden = true; return; }
+  els.imgScanResults.hidden = false;
+  const matchedHtml = matched.map(({sku, qty}) => `
+    <div class="imgscan-row-item ok">
+      <span>✓ ${escapeHtml(sku.style)} — ${escapeHtml(sku.desc)}</span>
+      <span>${qty} pcs</span>
+    </div>`).join('');
+  const unmatchedHtml = unmatched.map(it => `
+    <div class="imgscan-row-item bad" data-imgscan-unmatched="${escapeAttr(it.product)}">
+      <span>⚠ "${escapeHtml(it.product)}" — SKU Not Found</span>
+      <span class="imgscan-search-link">Search &amp; add →</span>
+    </div>`).join('');
+  els.imgScanResults.innerHTML =
+    (matchedHtml ? `<div class="imgscan-group-label">Added from photo</div>${matchedHtml}` : '') +
+    (unmatchedHtml ? `<div class="imgscan-group-label">SKU Not Found — search and add manually</div>${unmatchedHtml}` : '');
+}
+
+async function handleImgScanFile(file){
+  els.imgScanResults.hidden = true; els.imgScanResults.innerHTML = '';
+  els.imgScanStatus.hidden = false;
+  els.imgScanStatus.textContent = '📷 Reading photo…';
+  try{
+    const base64 = await fileToBase64(file);
+    const res = await fetch(IMAGE_SCAN_WEBAPP_URL, {
+      method: 'POST',
+      body: JSON.stringify({ imageBase64: base64, mimeType: file.type || 'image/jpeg' })
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    const items = Array.isArray(data.items) ? data.items : [];
+    if(!items.length){
+      els.imgScanStatus.textContent = 'No products found in that photo — try a clearer shot, or search and add manually.';
+      return;
+    }
+
+    const matched = [];
+    const unmatched = [];
+    items.forEach(it=>{
+      const sku = matchScannedProduct(it.product);
+      if(sku) matched.push({ sku, qty: it.qty });
+      else unmatched.push(it);
+    });
+
+    // Merge into an existing cart line by style, else push a new one — same
+    // logic openAddPanel's own Add to Order button uses, so re-scanning a
+    // photo that includes something already in the cart adds to it rather
+    // than creating a duplicate line for the same SKU.
+    matched.forEach(({sku, qty})=>{
+      const existingLine = state.cart.find(c=>c.style===sku.style);
+      if(existingLine){ existingLine.qty += qty; }
+      else { state.cart.push({ style: sku.style, qty, unitPrice: defaultUnitPriceFor(sku), discount: 0 }); }
+    });
+    if(matched.length) renderCart();
+
+    els.imgScanStatus.hidden = true;
+    renderImgScanResults(matched, unmatched);
+    toast(matched.length + ' product(s) added from photo' + (unmatched.length ? `, ${unmatched.length} not found` : ''));
+  } catch(e){
+    els.imgScanStatus.textContent = "Couldn't read that photo — " + (e && e.message ? e.message : 'try again or add products manually.');
+  }
+}
+
+if(els.btnImgScan){
+  els.btnImgScan.addEventListener('click', ()=> els.imgScanFile.click());
+  els.imgScanFile.addEventListener('change', ()=>{
+    const file = els.imgScanFile.files[0];
+    els.imgScanFile.value = ''; // clears the selection so picking the same file again still fires 'change'
+    if(file) handleImgScanFile(file);
+  });
+  els.imgScanResults.addEventListener('click', (e)=>{
+    const row = e.target.closest('[data-imgscan-unmatched]');
+    if(!row) return;
+    els.productSearch.value = row.dataset.imgscanUnmatched;
+    els.productSearch.dispatchEvent(new Event('input'));
+    els.productSearch.focus();
+  });
+}
 
 // ============================================================================
 // CUSTOMER NAME SEARCH (combobox over known buyers — free text still allowed)
