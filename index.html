@@ -410,6 +410,11 @@
      what actually makes it non-editable, rather than relying on a
      disabled/readonly attribute a rep's browser might handle differently. */
   .ap-qty-display{ font-size:16px; font-weight:800; color:var(--ink); margin-top:4px; }
+  /* Unit Price highlighted when Margin Master has no clean answer for this
+     Buyer + Product (missing or conflicting entries) — see openAddPanel. */
+  .ap-qty-display.warn{ color:var(--amber-text); }
+  .ap-qty-display.bad{ color:var(--red-text); }
+  #apMarginInfo{ margin-top:6px; }
   .qty-note{ font-size:11px; margin-top:2px; }
   .qty-note.ok{ color:var(--green-text); }
   .qty-note.warn{ color:var(--red-text); }
@@ -949,7 +954,16 @@ const MASTER_DATA_URLS = {
   // completely different sheet layout, unrelated to whatever's actually
   // live in the tab. Publish-to-web links don't reliably auto-update on
   // edits; /export always reflects the sheet's current content.
-  inventory: "https://docs.google.com/spreadsheets/d/19K5gNBYtMYwPraUIIqJB06m1VwfdJq7AdGJUfgb9asA/export?format=csv&gid=212855391" // Live Inventory tab.
+  inventory: "https://docs.google.com/spreadsheets/d/19K5gNBYtMYwPraUIIqJB06m1VwfdJq7AdGJUfgb9asA/export?format=csv&gid=212855391", // Live Inventory tab.
+  // Margin_Master tab, same MyFitness_Master_Data spreadsheet as the tabs
+  // above — per-Buyer-per-Product margin overrides (columns: buyer_code,
+  // buyer, style_id, scan_identifier, price_type, category, Channel).
+  // Referenced by SHEET NAME via the gviz query endpoint rather than by
+  // gid like the others — its gid wasn't given when this was wired up, and
+  // gviz (unlike the deprecated /pub links called out above) is a live
+  // query against the sheet's current content, verified 2026-09-01 via a
+  // direct fetch, so this isn't the same staleness risk /pub had.
+  margins: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/gviz/tq?tqx=out:csv&sheet=Margin_Master"
 };
 
 // Live Inventory Check: how stale a sync can be before the app stops
@@ -1241,6 +1255,19 @@ function namesRoughlyMatch(a, b){
 // rowsToCustomers().
 let BUYER_CHANNEL_LOCK_EXEMPT = {};
 
+// Buyer Id per customer label — the join key into Margin_Master's
+// buyer_code column (see marginFromMasterFor). Also populated in
+// rowsToCustomers().
+let BUYER_CODES = {};
+
+// Per-Buyer-per-Product margin overrides from the Margin_Master tab —
+// keyed by "<buyer_code>|<style_id>". A number means exactly one margin
+// was found for that pair (safe to auto-apply); an array means more than
+// one DISTINCT margin was found for the exact same pair (a real data
+// conflict in the sheet — see marginFromMasterFor, which refuses to guess
+// between them). Populated by rowsToMargins().
+let PRODUCT_MARGINS = {};
+
 // Live Inventory Check — keyed by style code, independent of Sales Channel
 // (the same physical warehouse stock backs a style whether it's being sold
 // through the General Trade or Supplement catalog, so this is one flat
@@ -1303,7 +1330,8 @@ const masterData = {
     customers:          { source: 'fallback', updatedAt: null, error: null },
     productsGT:          { source: 'fallback', updatedAt: null, error: null },
     productsSupplement:  { source: 'fallback', updatedAt: null, error: null },
-    inventory:           { source: 'fallback', updatedAt: null, error: null }
+    inventory:           { source: 'fallback', updatedAt: null, error: null },
+    margins:             { source: 'fallback', updatedAt: null, error: null }
   }
 };
 
@@ -1382,6 +1410,7 @@ function rowsToCustomers(rows){
   // let them pick."
   const channelsSeen = {};
   const lockExempt = {};
+  const codes = {};
   const labels = rows.map(r=>{
     const name = pickCol(r, ['Name','Customer Name','Customer','Buyer','Buyer Name']);
     if(!name) return null;
@@ -1394,6 +1423,12 @@ function rowsToCustomers(rows){
       channelsSeen[label].add(channel);
     }
     if(CHANNEL_LOCK_EXEMPT_NAMES.some(ex => namesRoughlyMatch(name, ex))) lockExempt[label] = true;
+    // Buyer Id — the join key into Margin_Master's buyer_code column (see
+    // marginFromMasterFor). Kept alongside BUYER_CHANNELS/BUYER_CODES
+    // rather than folded into the label itself since the label is meant to
+    // stay a clean, human-readable "Name-City-State" string.
+    const buyerId = pickCol(r, ['Buyer Id','Buyer Code','buyer_code']);
+    if(buyerId) codes[label] = buyerId;
     return label;
   }).filter(Boolean);
 
@@ -1407,7 +1442,63 @@ function rowsToCustomers(rows){
   });
   BUYER_CHANNELS = channels;
   BUYER_CHANNEL_LOCK_EXEMPT = lockExempt;
+  BUYER_CODES = codes;
   return labels;
+}
+
+// Margin_Master rows carry the margin as "MARGIN-45" (matching the same
+// price_type convention priceTypeFor() already writes into the DOFSOSKU
+// export elsewhere in this file) rather than a bare number — pull the
+// digits out of that string.
+function parseMarginPct(priceType){
+  const digits = String(priceType||'').replace(/[^0-9]/g,'');
+  return digits ? parseInt(digits, 10) : null;
+}
+
+// Returns an ARRAY of {key, pct} (like rowsToInventory returns an array of
+// per-style groups) rather than assigning PRODUCT_MARGINS directly — every
+// other rowsToX function in this file follows that same shape, and
+// loadOneTab's caching/"no usable rows" check both specifically expect an
+// array back. applyMarginRows() below turns it into the lookup map.
+function rowsToMargins(rows){
+  const seen = {}; // "<buyerCode>|<styleId>" -> Set of distinct margin %s
+  rows.forEach(r=>{
+    const buyerCode = pickCol(r, ['buyer_code','Buyer Code','Buyer Id']);
+    const styleId = pickCol(r, ['style_id','Style Id','Style Code','Style']);
+    const pct = parseMarginPct(pickCol(r, ['price_type','Price Type']));
+    if(!buyerCode || !styleId || pct === null) return;
+    const key = buyerCode.trim() + '|' + styleId.trim();
+    if(!seen[key]) seen[key] = new Set();
+    seen[key].add(pct);
+  });
+
+  return Object.keys(seen).map(key=>{
+    const set = seen[key];
+    // One distinct margin → the number to auto-apply. More than one → an
+    // array instead of a number, which marginFromMasterFor treats as a
+    // real conflict to surface, never silently resolves.
+    return { key, pct: set.size === 1 ? [...set][0] : [...set].sort((a,b)=>a-b) };
+  });
+}
+
+function applyMarginRows(rows){
+  const map = {};
+  rows.forEach(r => { map[r.key] = r.pct; });
+  PRODUCT_MARGINS = map;
+}
+
+// Looks up the applicable margin for one Buyer + Product pair. Returns:
+//   { status:'ok', pct:<number> }        — exactly one margin on file, safe to use
+//   { status:'duplicate', values:[...] } — more than one distinct margin on file — never guess
+//   { status:'missing' }                 — no margin on file for this pair at all
+// buyerCode/styleId are optional (a brand-new customer has no Buyer Id,
+// e.g.) — both simply resolve to 'missing' rather than throwing.
+function marginFromMasterFor(buyerCode, styleId){
+  if(!buyerCode || !styleId) return { status: 'missing' };
+  const entry = PRODUCT_MARGINS[buyerCode.trim() + '|' + styleId.trim()];
+  if(entry === undefined) return { status: 'missing' };
+  if(Array.isArray(entry)) return { status: 'duplicate', values: entry };
+  return { status: 'ok', pct: entry };
 }
 
 function rowsToProductsGT(rows){
@@ -1657,6 +1748,8 @@ function hydrateMasterDataFromCache(){
   if(s){ PRODUCT_MASTERS['Supplement'].skus = s.data; masterData.status.productsSupplement = { source:'cache', updatedAt:s.savedAt, error:null }; }
   const inv = loadMasterCache('inventory');
   if(inv){ applyInventoryRows(inv.data); masterData.status.inventory = { source:'cache', updatedAt:inv.savedAt, error:null }; }
+  const marg = loadMasterCache('margins');
+  if(marg){ applyMarginRows(marg.data); masterData.status.margins = { source:'cache', updatedAt:marg.savedAt, error:null }; }
 }
 
 // Loads one configured tab and swaps its data in via applyFn. Falls back
@@ -1703,7 +1796,12 @@ async function loadMasterData(opts){
     loadOneTab('productsGT', MASTER_DATA_URLS.productsGT, rowsToProductsGT,
       data => { PRODUCT_MASTERS['General Trade'].skus = data; }, FALLBACK_SKUS_GT),
     loadOneTab('productsSupplement', MASTER_DATA_URLS.productsSupplement, rowsToProductsSupplement,
-      data => { PRODUCT_MASTERS['Supplement'].skus = data; }, FALLBACK_SKUS_SUPPLEMENT)
+      data => { PRODUCT_MASTERS['Supplement'].skus = data; }, FALLBACK_SKUS_SUPPLEMENT),
+    // Margin_Master doesn't depend on the Product Master being loaded
+    // first (it's matched by style_id string, not a live SKU lookup), so
+    // this runs alongside the three tabs above rather than needing the
+    // after-the-fact sequencing rowsToInventory's EAN matching requires.
+    loadOneTab('margins', MASTER_DATA_URLS.margins, rowsToMargins, applyMarginRows, [])
   ]);
   // Inventory is optional — an unconfigured/blank URL is a normal, expected
   // state (not an error), and deliberately excluded from the CORE_MASTER_TABS
@@ -2076,16 +2174,22 @@ function locLabel(){ return 'All Locations'; }
 // Inventory/stock checking is disabled for now (will be added back later) —
 // a line is only rejected when the quantity or unit price is invalid.
 //
-// Unit Price (Excluding GST) is entered per line (auto-suggested from MRP
-// and margin, or from the Default Unit Price on the Pricing step, but always
-// editable). Discount is a flat rupee amount taken off that line before GST.
+// Unit Price (Excluding GST) is computed, not typed — from the Buyer +
+// Product's Margin_Master entry when one unambiguously exists (see
+// marginFromMasterFor/priceFromMarginPct), otherwise from the channel-wide
+// Margin % dropdowns on the Order Setup step. Discount is a flat rupee
+// amount taken off that line before GST.
 // ============================================================================
+function priceFromMarginPct(sku, pct){
+  const basePrice = sku.mrp / (1 + GST_RATE);
+  return Math.round(basePrice * (1 - pct/100) * 100) / 100;
+}
+
 function suggestedUnitPrice(sku){
   const cfg = activeChannelConfig();
   const group = cfg.marginGroupOf(sku);
-  const margin = parseFloat(cfg.marginSelectFor(group).value) || 0;
-  const basePrice = sku.mrp / (1 + GST_RATE);
-  return Math.round(basePrice * (1 - margin) * 100) / 100;
+  const marginFraction = parseFloat(cfg.marginSelectFor(group).value) || 0;
+  return priceFromMarginPct(sku, marginFraction * 100);
 }
 
 function defaultUnitPriceFor(sku){
@@ -2103,10 +2207,21 @@ function marginPercentFor(sku){
 
 // Classifies a line for the DOFSOSKU-style export: if the unit price still
 // matches the standard margin-based price, it's a plain "MARGIN-<pct>" line
-// with no explicit Price. If a rep has manually typed in a different unit
-// price (overriding the suggested one), it's exported as "SPECIAL" with
-// that price carried through.
+// with no explicit Price. Checked against the current Buyer's Margin_Master
+// price FIRST (when that Buyer+Product pair unambiguously resolves to one),
+// since that's now the primary price source — see openAddPanel — and only
+// falls back to the channel-wide margin dropdowns' suggested price for
+// pairs Margin_Master doesn't cover. Anything matching neither is exported
+// as "SPECIAL" with that price carried through.
 function priceTypeFor(sku, unitPrice){
+  const buyerCode = BUYER_CODES[els.customerName.value];
+  const marginMasterResult = marginFromMasterFor(buyerCode, sku.style);
+  if(marginMasterResult.status === 'ok'){
+    const marginMasterPrice = priceFromMarginPct(sku, marginMasterResult.pct);
+    if(Math.abs(unitPrice - marginMasterPrice) < 0.01){
+      return { priceType: 'MARGIN-' + marginMasterResult.pct, price: '' };
+    }
+  }
   const suggested = suggestedUnitPrice(sku);
   if(Math.abs(unitPrice - suggested) < 0.01){
     return { priceType: 'MARGIN-' + marginPercentFor(sku), price: '' };
@@ -2514,8 +2629,31 @@ function openAddPanel(style){
   if(!s){ toast('That product is no longer in the current master data — try searching again.'); return; }
   const existing = state.cart.find(c=>c.style===s.style);
   const defaultQty = existing ? existing.qty : s.casepack;
-  const defaultPrice = existing ? existing.unitPrice : defaultUnitPriceFor(s);
   const defaultDiscount = existing ? existing.discount : 0;
+
+  // Margin Master (Buyer + Product) is now the PRIMARY price source — the
+  // channel-wide Margin % dropdowns on Order Setup are only the fallback
+  // for pairs it doesn't cover. Computed fresh on every open (not just for
+  // new lines) so the warning below stays accurate even when re-opening an
+  // existing line — though the line's own already-set price is still what
+  // gets preserved/edited, same reasoning as discount.
+  const buyerCode = BUYER_CODES[els.customerName.value];
+  const marginResult = marginFromMasterFor(buyerCode, s.style);
+  const marginMasterPrice = marginResult.status === 'ok' ? priceFromMarginPct(s, marginResult.pct) : null;
+  const defaultPrice = existing ? existing.unitPrice : (marginMasterPrice !== null ? marginMasterPrice : defaultUnitPriceFor(s));
+
+  let marginInfoClass = 'ok', marginInfoText = '';
+  if(marginResult.status === 'ok'){
+    marginInfoText = `✓ Margin: ${marginResult.pct}% (Margin Master)`;
+  } else if(marginResult.status === 'duplicate'){
+    marginInfoClass = 'bad';
+    marginInfoText = `⚠ Multiple margins found for this Buyer &amp; Product. Please verify Margin Master. (${marginResult.values.join('%, ')}% on file)`;
+  } else {
+    marginInfoClass = 'warn';
+    marginInfoText = `⚠ Margin not configured for this Buyer &amp; Product.`;
+  }
+  const priceIsFlagged = marginResult.status !== 'ok';
+
   els.comboResults.hidden = true;
   els.productSearch.value = '';
 
@@ -2537,7 +2675,8 @@ function openAddPanel(style){
     <div class="field" style="margin-top:8px; margin-bottom:0;">
       <label>Unit Price (Excl. GST)</label>
       <input type="hidden" id="apPrice" value="${defaultPrice}">
-      <div class="ap-qty-display" id="apPriceDisplay">₹${defaultPrice}</div>
+      <div class="ap-qty-display${priceIsFlagged ? ' ' + marginInfoClass : ''}" id="apPriceDisplay">₹${defaultPrice}</div>
+      <div class="inv-check ${marginInfoClass}" id="apMarginInfo"><div class="inv-row"><span>${marginInfoText}</span></div></div>
     </div>
     <div class="ap-preview" id="apPreview"></div>
     <div class="ap-actions">
