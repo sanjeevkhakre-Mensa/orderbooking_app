@@ -1449,9 +1449,17 @@ function rowsToCustomers(rows){
 // Margin_Master rows carry the margin as "MARGIN-45" (matching the same
 // price_type convention priceTypeFor() already writes into the DOFSOSKU
 // export elsewhere in this file) rather than a bare number — pull the
-// digits out of that string.
+// digits out of that string. The other real value seen in this column is
+// the literal string "SAMPLE" (92 rows across 2 style_ids as of 2026-09-01,
+// e.g. EAN 8904327600634 / style C201, for every buyer it's listed
+// against) — a genuine ₹0 giveaway line, not a margin at all, so this
+// returns the sentinel string 'SAMPLE' for that case rather than null
+// (which would make rowsToMargins silently drop the row as unparseable —
+// exactly the bug this fixes).
 function parseMarginPct(priceType){
-  const digits = String(priceType||'').replace(/[^0-9]/g,'');
+  const v = String(priceType||'').trim();
+  if(/^sample$/i.test(v)) return 'SAMPLE';
+  const digits = v.replace(/[^0-9]/g,'');
   return digits ? parseInt(digits, 10) : null;
 }
 
@@ -1461,7 +1469,7 @@ function parseMarginPct(priceType){
 // loadOneTab's caching/"no usable rows" check both specifically expect an
 // array back. applyMarginRows() below turns it into the lookup map.
 function rowsToMargins(rows){
-  const seen = {}; // "<buyerCode>|<styleId>" -> Set of distinct margin %s
+  const seen = {}; // "<buyerCode>|<styleId>" -> Set of distinct margin %s / 'SAMPLE'
   rows.forEach(r=>{
     const buyerCode = pickCol(r, ['buyer_code','Buyer Code','Buyer Id']);
     const styleId = pickCol(r, ['style_id','Style Id','Style Code','Style']);
@@ -1474,10 +1482,13 @@ function rowsToMargins(rows){
 
   return Object.keys(seen).map(key=>{
     const set = seen[key];
-    // One distinct margin → the number to auto-apply. More than one → an
-    // array instead of a number, which marginFromMasterFor treats as a
-    // real conflict to surface, never silently resolves.
-    return { key, pct: set.size === 1 ? [...set][0] : [...set].sort((a,b)=>a-b) };
+    // One distinct value (a number, or 'SAMPLE') → safe to auto-apply as-is.
+    // More than one distinct value — whether two different margins, or a
+    // margin mixed with 'SAMPLE' — → an array instead, which
+    // marginFromMasterFor treats as a real conflict to surface, never
+    // silently resolves (no such mixed case exists in the sheet as of
+    // 2026-09-01, but the logic doesn't assume that stays true).
+    return { key, pct: set.size === 1 ? [...set][0] : [...set].sort() };
   });
 }
 
@@ -1489,8 +1500,9 @@ function applyMarginRows(rows){
 
 // Looks up the applicable margin for one Buyer + Product pair. Returns:
 //   { status:'ok', pct:<number> }        — exactly one margin on file, safe to use
-//   { status:'duplicate', values:[...] } — more than one distinct margin on file — never guess
-//   { status:'missing' }                 — no margin on file for this pair at all
+//   { status:'sample' }                  — Margin_Master marks this pair "SAMPLE" — a ₹0 giveaway, not a margin
+//   { status:'duplicate', values:[...] } — more than one distinct value on file — never guess
+//   { status:'missing' }                 — no entry on file for this pair at all
 // buyerCode/styleId are optional (a brand-new customer has no Buyer Id,
 // e.g.) — both simply resolve to 'missing' rather than throwing.
 function marginFromMasterFor(buyerCode, styleId){
@@ -1498,6 +1510,7 @@ function marginFromMasterFor(buyerCode, styleId){
   const entry = PRODUCT_MARGINS[buyerCode.trim() + '|' + styleId.trim()];
   if(entry === undefined) return { status: 'missing' };
   if(Array.isArray(entry)) return { status: 'duplicate', values: entry };
+  if(entry === 'SAMPLE') return { status: 'sample' };
   return { status: 'ok', pct: entry };
 }
 
@@ -2213,7 +2226,8 @@ function marginPercentFor(sku){
 // falls back to the channel-wide margin dropdowns' suggested price for
 // pairs Margin_Master doesn't cover. Anything matching neither is exported
 // as "SPECIAL" with that price carried through.
-function priceTypeFor(sku, unitPrice){
+function priceTypeFor(sku, unitPrice, isSample){
+  if(isSample) return { priceType: 'SAMPLE', price: '' };
   const buyerCode = BUYER_CODES[els.customerName.value];
   const marginMasterResult = marginFromMasterFor(buyerCode, sku.style);
   if(marginMasterResult.status === 'ok'){
@@ -2241,7 +2255,7 @@ function availableStockFor(style){
   return inv ? inv.remaining : null;
 }
 
-function evaluateLine(sku, qty, unitPrice, discount){
+function evaluateLine(sku, qty, unitPrice, discount, isSample){
   qty = parseFloat(qty) || 0;
   unitPrice = parseFloat(unitPrice) || 0;
   discount = parseFloat(discount) || 0;
@@ -2249,7 +2263,10 @@ function evaluateLine(sku, qty, unitPrice, discount){
   let alert = '';
   if(qty <= 0 || isNaN(qty)) alert = 'Invalid quantity';
   else if(qty % sku.casepack !== 0) alert = 'Not a multiple of ' + sku.casepack;
-  else if(!(unitPrice > 0)) alert = 'Unit price must be greater than 0';
+  // A Margin_Master line explicitly marked "SAMPLE" (see marginFromMasterFor)
+  // is a genuine ₹0 giveaway, not a forgotten price — the usual "must be
+  // greater than 0" guard only applies when isSample isn't set.
+  else if(!(unitPrice > 0) && !isSample) alert = 'Unit price must be greater than 0';
   else if(STOCK_VALIDATION_ENABLED){
     const available = availableStockFor(sku.style);
     if(available !== null && qty > available) alert = `Insufficient stock — only ${available} available`;
@@ -2639,12 +2656,22 @@ function openAddPanel(style){
   // gets preserved/edited, same reasoning as discount.
   const buyerCode = BUYER_CODES[els.customerName.value];
   const marginResult = marginFromMasterFor(buyerCode, s.style);
-  const marginMasterPrice = marginResult.status === 'ok' ? priceFromMarginPct(s, marginResult.pct) : null;
+  const marginMasterPrice =
+    marginResult.status === 'ok' ? priceFromMarginPct(s, marginResult.pct) :
+    marginResult.status === 'sample' ? 0 : null;
   const defaultPrice = existing ? existing.unitPrice : (marginMasterPrice !== null ? marginMasterPrice : defaultUnitPriceFor(s));
+  // Only a brand-new (not existing) line takes the "SAMPLE" price_type
+  // literally — an existing line that already has its own price should
+  // never be silently reclassified as a free sample just because this
+  // panel was reopened, same reasoning as discount/price preservation
+  // elsewhere in this function.
+  const isSample = !existing && marginResult.status === 'sample';
 
   let marginInfoClass = 'ok', marginInfoText = '';
   if(marginResult.status === 'ok'){
     marginInfoText = `✓ Margin: ${marginResult.pct}% (Margin Master)`;
+  } else if(marginResult.status === 'sample'){
+    marginInfoText = `🎁 Sample item — Unit Price ₹0 (Margin Master)`;
   } else if(marginResult.status === 'duplicate'){
     marginInfoClass = 'bad';
     marginInfoText = `⚠ Multiple margins found for this Buyer &amp; Product. Please verify Margin Master. (${marginResult.values.join('%, ')}% on file)`;
@@ -2652,7 +2679,7 @@ function openAddPanel(style){
     marginInfoClass = 'warn';
     marginInfoText = `⚠ Margin not configured for this Buyer &amp; Product.`;
   }
-  const priceIsFlagged = marginResult.status !== 'ok';
+  const priceIsFlagged = marginResult.status === 'missing' || marginResult.status === 'duplicate';
 
   els.comboResults.hidden = true;
   els.productSearch.value = '';
@@ -2792,9 +2819,9 @@ function openAddPanel(style){
     // set some other way) leaves it exactly as-is rather than silently
     // wiping it out just because this panel was reopened.
     if(qty<=0){ toast('Enter the number of boxes'); return; }
-    if(!(price>0)){ toast('Enter a unit price greater than 0'); return; }
+    if(!(price>0) && !isSample){ toast('Enter a unit price greater than 0'); return; }
     if(existing){ existing.qty = qty; existing.unitPrice = price; existing.discount = defaultDiscount; }
-    else { state.cart.push({style: s.style, qty, unitPrice: price, discount: defaultDiscount}); }
+    else { state.cart.push({style: s.style, qty, unitPrice: price, discount: defaultDiscount, isSample}); }
     closeAddPanel();
     renderCart();
     toast(existing? 'Line updated' : `${s.style} added to order`);
@@ -2813,7 +2840,7 @@ function computeCartLines(){
     .map(c=>{
       const s = findSkuByStyle(c.style);
       if(!s) return null;
-      const r = evaluateLine(s, c.qty, c.unitPrice, c.discount);
+      const r = evaluateLine(s, c.qty, c.unitPrice, c.discount, c.isSample);
       return { ...c, sku:s, ...r };
     })
     .filter(Boolean);
@@ -2894,7 +2921,7 @@ function cartItemHtml(l){
         <div><label>Qty</label><input type="number" class="mini-qty" value="${l.qty}" data-style="${styleAttr}"></div>
       </div>
       <div class="ci-calc">
-        <span>Unit Price ₹${l.unitPrice}</span>
+        <span>Unit Price ₹${l.unitPrice}${l.isSample ? ' 🎁 Sample' : ''}</span>
         <span>GST ₹${l.gstAmount.toFixed(2)}</span>
         <span class="ci-value">Total ${fmtMoney(l.lineTotal)}</span>
         <span class="ci-badge ${badgeClass}">${l.validation}</span>
@@ -3040,7 +3067,7 @@ function buildOrderPayload(){
     totalBeforeGst: totalBeforeGst.toFixed(2), totalDiscount: totalDiscount.toFixed(2),
     totalGst: totalGst.toFixed(2), netOrderValue: netOrderValue.toFixed(2),
     lines: lines.map(l=>{
-      const pt = priceTypeFor(l.sku, l.unitPrice);
+      const pt = priceTypeFor(l.sku, l.unitPrice, l.isSample);
       return {
         style:l.sku.style, desc:l.sku.desc, ean:l.sku.ean, mrp:l.sku.mrp, qty:l.qty,
         unitPrice:l.unitPrice.toFixed(2), discount:l.discountAmt.toFixed(2),
@@ -3164,7 +3191,7 @@ function buildWhatsAppMessage(payload, opts){
   msg += `Lines: ${payload.lines.length} | Accepted: ${accepted.length} | Rejected: ${rejected.length}\n\n`;
   msg += `*Items:*\n`;
   payload.lines.forEach((l,i)=>{
-    msg += `${i+1}. ${l.style} - ${l.desc} | Qty: ${l.qty} | Rate ₹${l.unitPrice}`;
+    msg += `${i+1}. ${l.style} - ${l.desc} | Qty: ${l.qty} | Rate ₹${l.unitPrice}${l.priceType==='SAMPLE' ? ' (SAMPLE)' : ''}`;
     if(parseFloat(l.discount)>0) msg += ` | Disc ₹${l.discount}`;
     msg += ` | GST ₹${l.gstAmount} | Total ₹${l.lineTotal}${l.validation==='REJECTED' ? ' ⚠ REJECTED':''}\n`;
   });
@@ -3950,7 +3977,10 @@ function loadOrderIntoWizard(order){
     style: l.style,
     qty: Number(l.qty) || 0,
     unitPrice: parseFloat(l.unitPrice) || 0,
-    discount: parseFloat(l.discount) || 0
+    discount: parseFloat(l.discount) || 0,
+    // Restores a ₹0 SAMPLE line as a sample rather than letting
+    // evaluateLine() reject it for having no price — see priceTypeFor().
+    isSample: l.priceType === 'SAMPLE'
   }));
 
   renderCart();
