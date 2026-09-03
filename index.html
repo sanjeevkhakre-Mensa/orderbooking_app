@@ -2376,7 +2376,10 @@ function evaluateLine(sku, qty, unitPrice, discount, isSample){
   const grossValue = qty * unitPrice;
   const discountAmt = Math.min(Math.max(discount,0), grossValue);
   const taxableValue = grossValue - discountAmt;
-  const gstAmount = Math.round(taxableValue * GST_RATE * 100) / 100;
+  // A SAMPLE line (₹1 flat, see openAddPanel/marginFromMasterFor) is a
+  // giveaway, not a real sale — no GST applies, so its total is just
+  // qty × ₹1 with nothing added on top.
+  const gstAmount = isSample ? 0 : Math.round(taxableValue * GST_RATE * 100) / 100;
   const lineTotal = Math.round((taxableValue + gstAmount) * 100) / 100;
 
   let validation, reason = '';
