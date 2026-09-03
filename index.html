@@ -470,10 +470,18 @@
   .ci-badge.ok{ background:var(--green-bg); color:var(--green-text); }
   .ci-badge.bad{ background:var(--red-bg); color:var(--red-text); }
   .ci-reason{ font-size:11px; color:var(--red-text); margin-top:5px; }
-  .ci-remove{
-    background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer;
+  /* Sits at the top of each cart item (align-items:flex-start on .cart-item
+     puts this row at the top, not centered against the whole card) — Edit
+     reopens the Add-to-Order panel for this line (see openAddPanel's
+     `existing` handling) now that Qty in Order Lines is read-only. */
+  .ci-actions{ display:flex; gap:4px; flex-shrink:0; }
+  .ci-edit, .ci-remove{
+    background:none; border:none; font-size:15px; cursor:pointer;
     width:28px; height:28px; border-radius:50%; flex-shrink:0;
   }
+  .ci-edit{ color:var(--blue-dark); }
+  .ci-edit:hover{ background:#eef6fb; }
+  .ci-remove{ color:var(--muted); }
   .ci-remove:hover{ background:var(--red-bg); color:var(--red-text); }
 
   /* ---------------- Sticky mini summary (step 2) ---------------- */
@@ -3006,7 +3014,10 @@ function cartItemHtml(l){
       </div>
       ${l.reason ? `<div class="ci-reason">⚠ ${l.reason}</div>` : ''}
     </div>
-    <button class="ci-remove" data-remove="${styleAttr}">✕</button>
+    <div class="ci-actions">
+      <button class="ci-edit" data-edit="${styleAttr}" title="Edit line">✎</button>
+      <button class="ci-remove" data-remove="${styleAttr}" title="Remove line">✕</button>
+    </div>
   </div>`;
 }
 
@@ -3016,6 +3027,12 @@ document.addEventListener('click', (e)=>{
     const style = rm.dataset.remove;
     state.cart = state.cart.filter(c=>c.style!==style);
     renderCart();
+    return;
+  }
+  const ed = e.target.closest('[data-edit]');
+  if(ed){
+    openAddPanel(ed.dataset.edit);
+    els.addPanel.scrollIntoView({behavior:'smooth', block:'center'});
   }
 });
 
