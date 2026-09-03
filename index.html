@@ -792,7 +792,14 @@
         </div>
       </div>
 
-      <div class="card">
+      <!-- Pricing & Fulfilment is no longer shown on Order Setup — pricing is
+           now driven by Margin Master (see openAddPanel/marginFromMasterFor),
+           and Fulfilment Location was removed earlier (see locKey/locLabel).
+           These margin % selects stay in the DOM, hidden, purely as the
+           fallback default (unchanged from before) for a Buyer+Product pair
+           Margin Master doesn't cover — see suggestedUnitPrice/
+           marginPercentFor — so that logic doesn't need to change shape. -->
+      <div class="card" hidden>
         <h2>Pricing &amp; Fulfilment</h2>
         <div class="grid2" id="marginGT">
           <div class="field">
