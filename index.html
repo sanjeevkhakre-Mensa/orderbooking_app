@@ -267,6 +267,12 @@
   }
   .card h2{ font-size:13px; margin:0 0 10px; color:var(--ink); font-weight:800; letter-spacing:.2px; text-transform:uppercase; }
   .card h2 .hint2{ display:block; font-size:11px; font-weight:500; color:var(--muted); text-transform:none; margin-top:2px; letter-spacing:0; }
+  /* Order Lines only — trims just the left/right padding (not top/bottom,
+     not every .card) so each product's row gets a bit more width to lay
+     out Qty/Unit Price/GST/Total/status in, on top of the row-level
+     compaction below. The heading stays in the same reduced-padding
+     container, so it never goes out of alignment with the rows under it. */
+  .card-wide{ padding-left:8px; padding-right:8px; }
 
   .field{ display:flex; flex-direction:column; gap:5px; margin-bottom:12px; }
   .field:last-child{ margin-bottom:0; }
@@ -572,7 +578,7 @@
   .cart-header{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
   .cart-header h2{ margin:0; }
   .cart-empty{ text-align:center; color:var(--muted); font-size:12.5px; padding:20px 10px; }
-  .cart-list{ display:flex; flex-direction:column; gap:8px; }
+  .cart-list{ display:flex; flex-direction:column; gap:6px; }
   /* Every renderCart() call rebuilds the whole list via innerHTML — no
      diffing, so every line "reappears" on every add/remove/edit, not just
      the one that changed. Same fadein keyframe as .panel-step (above)
@@ -580,7 +586,7 @@
      cut; cheap because it needs no JS, just runs automatically whenever a
      matching element is inserted into the DOM. */
   .cart-item{
-    border:1.5px solid var(--border); border-radius:10px; padding:10px 12px;
+    border:1.5px solid var(--border); border-radius:10px; padding:8px 9px;
     display:flex; justify-content:space-between; align-items:flex-start; gap:8px;
     animation:fadein .16s ease;
   }
@@ -592,24 +598,25 @@
      and Discount both moved out, and a single grid column would stretch
      it across the full card width instead of sizing to a sensible input
      width. */
-  .ci-fields{ display:flex; gap:6px; margin-top:8px; }
-  .ci-fields > div{ display:flex; flex-direction:column; gap:2px; flex:0 0 120px; }
+  .ci-fields{ display:flex; gap:6px; margin-top:5px; }
+  .ci-fields > div{ display:flex; flex-direction:column; gap:1px; flex:0 0 150px; }
   .ci-fields label{ font-size:9.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.2px; }
+  /* The box-count caption ("1 box of 12") used to be its own line below the
+     value box — folded into the label line instead (reusing the .opt
+     "secondary label text" look already used for #orderNo/#apBoxes etc.)
+     since that was a whole extra stacked line for a handful of words. */
+  .ci-fields label .opt{ font-weight:500; text-transform:none; letter-spacing:0; }
   /* .ci-qty-value is a read-only stand-in for what used to be an <input> —
      same box metrics, but shaded like the app's other disabled/computed
      fields (see #orderNo) so it reads as non-editable at a glance. Qty is
      changed by re-selecting the product from Search & Add Products, which
      reopens it through the Add-to-Order panel's case-pack/stock checks. */
   .ci-fields input, .ci-fields .ci-qty-value{
-    width:100%; text-align:center; padding:5px 2px; border:1.5px solid var(--border); border-radius:6px;
-    font-weight:700; font-size:16px; min-height:34px; box-sizing:border-box;
+    width:100%; text-align:center; padding:3px 2px; border:1.5px solid var(--border); border-radius:6px;
+    font-weight:700; font-size:15px; min-height:28px; box-sizing:border-box;
   }
   .ci-fields .ci-qty-value{ display:flex; align-items:center; justify-content:center; background:#f4f7f9; color:var(--ink); }
-  /* The "Qty (pcs)" label alone still left room to misread the number as
-     boxes (especially when casepack happens to equal the pcs count, e.g.
-     a 6-pack ordered as 1 box = "6") — this spells out the box count too. */
-  .ci-qty-boxes{ font-size:10px; color:var(--muted); text-align:center; }
-  .ci-calc{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px 8px; margin-top:8px; font-size:11.5px; color:var(--muted); }
+  .ci-calc{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px 8px; margin-top:5px; font-size:11.5px; color:var(--muted); }
   .ci-value{ font-weight:800; font-size:12.5px; color:var(--ink); }
   .ci-badge{ font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:20px; text-transform:uppercase; letter-spacing:.2px; }
   .ci-badge.ok{ background:var(--green-bg); color:var(--green-text); }
@@ -1021,7 +1028,7 @@
         <div class="add-panel" id="addPanel" hidden></div>
       </div>
 
-      <div class="card">
+      <div class="card card-wide">
         <div class="cart-header">
           <h2 style="margin:0;">Order Lines (<span id="cartCount">0</span>)</h2>
         </div>
@@ -3438,9 +3445,8 @@ function cartItemHtml(l){
       <div class="ci-sub">₹${l.sku.mrp} MRP · Case ${l.sku.casepack}</div>
       <div class="ci-fields">
         <div>
-          <label>Qty (pcs)</label>
+          <label>Qty (pcs)${l.qty % l.sku.casepack === 0 ? ` <span class="opt">${l.qty / l.sku.casepack} ${l.qty / l.sku.casepack === 1 ? 'box' : 'boxes'} of ${l.sku.casepack}</span>` : ''}</label>
           <div class="ci-qty-value">${l.qty}</div>
-          ${l.qty % l.sku.casepack === 0 ? `<div class="ci-qty-boxes">${l.qty / l.sku.casepack} ${l.qty / l.sku.casepack === 1 ? 'box' : 'boxes'} of ${l.sku.casepack}</div>` : ''}
         </div>
       </div>
       <div class="ci-calc">
