@@ -2224,7 +2224,7 @@ function renderInventoryTable(){
       <td>${fmtNum(inv.booked)}</td>
       <td class="${remainingCls}">${fmtNum(scopedRemaining)}</td>
       <td>${updated}</td>
-      <td>${escapeHtml(desc || '—')}</td>
+      <td>${escapeHtml(stripBrandPrefix(desc) || '—')}</td>
     </tr>`;
   }).join('');
 }
@@ -2610,6 +2610,22 @@ function evaluateLine(sku, qty, unitPrice, discount, isSample){
 function fmtMoney(n){ return '₹' + (n||0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 function fmtNum(n){ return (n||0).toLocaleString('en-IN'); }
 
+// Product Master descriptions are typically brand-prefixed as typed in the
+// Sheet ("MYFITNESS CHOCOLATE...", "Pro.Fitness High Protein...", "PRO.
+// FITNESS Dark Chocolate...") — redundant once it's already showing inside
+// a MyFitness/Pro.Fitness-branded app, so every on-screen display of a
+// product name strips it via this one function. Deliberately a DISPLAY-only
+// transform: it's applied at each render site, never to the underlying
+// Sheet data or to buildOrderPayload()'s line descriptions, so the actual
+// order record sent to WhatsApp/logged to the Order History sheet still
+// carries the full original description exactly as the Sheet has it.
+// Case/spacing/punctuation-insensitive (MYFITNESS, MyFitness, PRO.FITNESS,
+// "Pro Fitness", etc.), and only strips a match at the very START of the
+// name — a "prefix", not the brand name appearing anywhere in it.
+function stripBrandPrefix(name){
+  return String(name||'').replace(/^\s*(my\s*fitness|pro\.?\s*fitness)\b[\s.:-]*/i, '').trim();
+}
+
 // ============================================================================
 // PRODUCT SEARCH (combobox)
 // ============================================================================
@@ -2746,7 +2762,7 @@ function renderComboResults(){
         ${imgUrl ? `<img class="ci-thumb" src="${imgUrl}" alt="" loading="lazy">` : ''}
         <div class="ci-l">
           <div class="ci-style">${escapeHtml(s.style)}</div>
-          <div class="ci-desc">${escapeHtml(s.desc)}</div>
+          <div class="ci-desc">${escapeHtml(stripBrandPrefix(s.desc))}</div>
         </div>
         <div class="ci-r">
           ${comboRowPriceHtml(s)}
@@ -2949,7 +2965,7 @@ function renderImgScanResults(matched, unmatched){
   els.imgScanResults.hidden = false;
   const matchedHtml = matched.map(({sku, qty}) => `
     <div class="imgscan-row-item ok">
-      <span>✓ ${escapeHtml(sku.style)} — ${escapeHtml(sku.desc)}</span>
+      <span>✓ ${escapeHtml(sku.style)} — ${escapeHtml(stripBrandPrefix(sku.desc))}</span>
       <span>${qty} pcs</span>
     </div>`).join('');
   const unmatchedHtml = unmatched.map(it => `
@@ -3167,7 +3183,7 @@ function openAddPanel(style){
   els.addPanel.hidden = false;
   els.addPanel.innerHTML = `
     ${apImgUrl ? `<img class="ap-photo" src="${apImgUrl}" alt="">` : ''}
-    <div class="ap-title">${escapeHtml(s.style)} — ${escapeHtml(s.desc)}</div>
+    <div class="ap-title">${escapeHtml(s.style)} — ${escapeHtml(stripBrandPrefix(s.desc))}</div>
     <div class="ap-desc">MRP ₹${s.mrp} · Case pack ${s.casepack} · ${s.brand ? 'Brand '+escapeHtml(s.brand) : 'Category '+escapeHtml(s.category||'—')}</div>
     <div class="field" style="margin-bottom:6px;">
       <label># Boxes <span class="opt">1 box = ${s.casepack} pcs</span></label>
@@ -3418,7 +3434,7 @@ function cartItemHtml(l){
   return `<div class="cart-item ${l.validation==='Accepted'?'accepted':'rejected'}" data-style="${styleAttr}">
     ${imgUrl ? `<img class="ci-thumb" src="${imgUrl}" alt="" loading="lazy">` : ''}
     <div style="flex:1; min-width:0;">
-      <div class="ci-name">${escapeHtml(l.sku.style)} — ${escapeHtml(l.sku.desc)}</div>
+      <div class="ci-name">${escapeHtml(l.sku.style)} — ${escapeHtml(stripBrandPrefix(l.sku.desc))}</div>
       <div class="ci-sub">₹${l.sku.mrp} MRP · Case ${l.sku.casepack}</div>
       <div class="ci-fields">
         <div>
@@ -4151,7 +4167,7 @@ function renderHistoryOverlay(){
 
   const linesHtml = (o.lines||[]).map(l => `
     <div class="hd-line">
-      <span>${escapeHtml(l.desc||l.style||'—')} × ${l.qty}${l.validation==='REJECTED'?' ⚠':''}</span>
+      <span>${escapeHtml(stripBrandPrefix(l.desc)||l.style||'—')} × ${l.qty}${l.validation==='REJECTED'?' ⚠':''}</span>
       <span>₹${l.lineTotal}</span>
     </div>
   `).join('') || '<div class="hd-line"><span>No lines recorded</span><span></span></div>';
