@@ -1523,7 +1523,7 @@ function rowsToCustomers(rows){
 // digits out of that string. The other real value seen in this column is
 // the literal string "SAMPLE" (92 rows across 2 style_ids as of 2026-09-01,
 // e.g. EAN 8904327600634 / style C201, for every buyer it's listed
-// against) — a genuine ₹0 giveaway line, not a margin at all, so this
+// against) — a genuine ₹1 giveaway line, not a margin at all, so this
 // returns the sentinel string 'SAMPLE' for that case rather than null
 // (which would make rowsToMargins silently drop the row as unparseable —
 // exactly the bug this fixes).
@@ -1571,7 +1571,7 @@ function applyMarginRows(rows){
 
 // Looks up the applicable margin for one Buyer + Product pair. Returns:
 //   { status:'ok', pct:<number> }        — exactly one margin on file, safe to use
-//   { status:'sample' }                  — Margin_Master marks this pair "SAMPLE" — a ₹0 giveaway, not a margin
+//   { status:'sample' }                  — Margin_Master marks this pair "SAMPLE" — a ₹1 giveaway, not a margin
 //   { status:'duplicate', values:[...] } — more than one distinct value on file — never guess
 //   { status:'missing' }                 — no entry on file for this pair at all
 // buyerCode/styleId are optional (a brand-new customer has no Buyer Id,
@@ -2363,8 +2363,10 @@ function evaluateLine(sku, qty, unitPrice, discount, isSample){
   if(qty <= 0 || isNaN(qty)) alert = 'Invalid quantity';
   else if(qty % sku.casepack !== 0) alert = 'Not a multiple of ' + sku.casepack;
   // A Margin_Master line explicitly marked "SAMPLE" (see marginFromMasterFor)
-  // is a genuine ₹0 giveaway, not a forgotten price — the usual "must be
-  // greater than 0" guard only applies when isSample isn't set.
+  // now prices at ₹1, not ₹0, but the exemption stays here for orders saved
+  // before this change (still ₹0 in their stored data) and any other
+  // legitimately near-zero sample price — the usual "must be greater than 0"
+  // guard only applies when isSample isn't set.
   else if(!(unitPrice > 0) && !isSample) alert = 'Unit price must be greater than 0';
   else if(STOCK_VALIDATION_ENABLED){
     const available = availableStockFor(sku.style);
@@ -2757,7 +2759,7 @@ function openAddPanel(style){
   const marginResult = marginFromMasterFor(buyerCode, s.style);
   const marginMasterPrice =
     marginResult.status === 'ok' ? priceFromMarginPct(s, marginResult.pct) :
-    marginResult.status === 'sample' ? 0 : null;
+    marginResult.status === 'sample' ? 1 : null;
   const defaultPrice = existing ? existing.unitPrice : (marginMasterPrice !== null ? marginMasterPrice : defaultUnitPriceFor(s));
   // Only a brand-new (not existing) line takes the "SAMPLE" price_type
   // literally — an existing line that already has its own price should
@@ -2770,7 +2772,7 @@ function openAddPanel(style){
   if(marginResult.status === 'ok'){
     marginInfoText = `✓ Margin: ${marginResult.pct}% (Margin Master)`;
   } else if(marginResult.status === 'sample'){
-    marginInfoText = `🎁 Sample item — Unit Price ₹0 (Margin Master)`;
+    marginInfoText = `🎁 Sample item — Unit Price ₹1 (Margin Master)`;
   } else if(marginResult.status === 'duplicate'){
     marginInfoClass = 'bad';
     marginInfoText = `⚠ Multiple margins found for this Buyer &amp; Product. Please verify Margin Master. (${marginResult.values.join('%, ')}% on file)`;
@@ -4082,7 +4084,7 @@ function loadOrderIntoWizard(order){
     qty: Number(l.qty) || 0,
     unitPrice: parseFloat(l.unitPrice) || 0,
     discount: parseFloat(l.discount) || 0,
-    // Restores a ₹0 SAMPLE line as a sample rather than letting
+    // Restores a SAMPLE line as a sample rather than letting
     // evaluateLine() reject it for having no price — see priceTypeFor().
     isSample: l.priceType === 'SAMPLE'
   }));
