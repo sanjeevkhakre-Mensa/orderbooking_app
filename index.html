@@ -356,12 +356,24 @@
   }
   .combo-item{
     padding:10px 12px; border-bottom:1px solid #f1f3f4; cursor:pointer;
-    display:flex; justify-content:space-between; align-items:center; gap:8px;
+    display:flex; align-items:center; gap:8px;
     animation:fadein .14s ease;
   }
   .combo-item:last-child{ border-bottom:none; }
   .combo-item:hover, .combo-item:active{ background:#f5fbfe; }
-  .combo-item .ci-l{ min-width:0; }
+  /* flex:1 (not justify-content:space-between on the parent, which stopped
+     working cleanly once .ci-thumb became a 3rd flex child alongside
+     .ci-l/.ci-r) pushes .ci-r to the right edge whether or not a photo
+     precedes .ci-l. */
+  .combo-item .ci-l{ min-width:0; flex:1; }
+  /* Square thumbnail from product-images/thumb/ — see productImageUrl().
+     Most SKUs don't have a photo yet, so this is only rendered when one
+     exists; object-fit:cover crops to fill the square rather than
+     distorting a non-square source photo. */
+  .ci-thumb{
+    width:40px; height:40px; border-radius:8px; object-fit:cover;
+    flex-shrink:0; background:var(--gray-bg);
+  }
   .combo-item .ci-style{ font-weight:800; font-size:12.5px; color:var(--ink); }
   .combo-item .ci-desc{ font-size:11.5px; color:#556; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .combo-item .ci-r{ text-align:right; flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
@@ -474,6 +486,13 @@
   .add-panel{
     border:1.5px solid var(--blue); border-radius:10px; padding:12px;
     background:#f5fbfe;
+  }
+  /* From product-images/full/ — see productImageUrl(). Only rendered when
+     that style has a photo; most don't yet, so the panel just starts at
+     .ap-title in that case, same as before this existed. */
+  .ap-photo{
+    display:block; width:100%; max-height:200px; object-fit:contain;
+    background:#fff; border-radius:8px; margin-bottom:8px;
   }
   .add-panel .ap-title{ font-weight:800; font-size:13.5px; color:var(--ink); }
   .add-panel .ap-desc{ font-size:11.5px; color:#556; margin-bottom:8px; }
@@ -2591,6 +2610,27 @@ function findSkuByStyle(style){
   return activeSkus().find(s => s.style === style);
 }
 
+// ============================================================================
+// PRODUCT IMAGES
+// Static files under product-images/ — no build step, so this is just a
+// plain list of which style codes actually have one, kept in sync by hand
+// whenever a product-image folder gets processed (currently: "01 Peanut
+// Butter" only; "02 oats"/"Combos"/"otherrs" haven't been added yet). Two
+// sizes per style, generated once from the original photos (which ran
+// 40-580KB each — too heavy to load one per search result/cart line on a
+// rep's mobile data): thumb/ (max 120px, for the small square next to a
+// product in search results and Order Lines) and full/ (max 480px, for the
+// larger image at the top of the Add-to-Order panel).
+const PRODUCT_IMAGE_STYLES = new Set(['C12501','C12502','C12503','C202','C22701','C22702','C22703','C25002','C25003','C5102','C5103','C90001','C90002','CAB22702','DC1001','DC5101','DC5103','N12501','N25002','N5101','N51011','N90002','O12502','O22701','O5102','O90001','O90002','ZN5102']);
+
+// Returns null (not a broken-image URL) for a style with no photo yet, so
+// callers can skip rendering an <img> entirely rather than showing a
+// broken-image icon — most SKUs don't have one yet, and a page full of
+// broken-image glyphs would look worse than no image at all.
+function productImageUrl(style, size){
+  return PRODUCT_IMAGE_STYLES.has(style) ? `product-images/${size}/${style}.jpg` : null;
+}
+
 function searchProductMatches(){
   const qRaw = normSpace(els.productSearch.value);
   if(!qRaw) return null;
@@ -2678,7 +2718,10 @@ function renderComboResults(){
   if(matches.length===0){
     els.comboResults.innerHTML = '<div class="combo-empty">No products match your search.</div>';
   } else {
-    els.comboResults.innerHTML = matches.map(s => `<div class="combo-item" data-style="${escapeHtml(s.style)}">
+    els.comboResults.innerHTML = matches.map(s => {
+      const imgUrl = productImageUrl(s.style, 'thumb');
+      return `<div class="combo-item" data-style="${escapeHtml(s.style)}">
+        ${imgUrl ? `<img class="ci-thumb" src="${imgUrl}" alt="" loading="lazy">` : ''}
         <div class="ci-l">
           <div class="ci-style">${escapeHtml(s.style)}</div>
           <div class="ci-desc">${escapeHtml(s.desc)}</div>
@@ -2687,7 +2730,8 @@ function renderComboResults(){
           ${comboRowPriceHtml(s)}
           ${comboRowControlsHtml(s)}
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
   els.comboResults.hidden = false;
 }
@@ -3096,8 +3140,11 @@ function openAddPanel(style){
   els.comboResults.hidden = true;
   els.productSearch.value = '';
 
+  const apImgUrl = productImageUrl(s.style, 'full');
+
   els.addPanel.hidden = false;
   els.addPanel.innerHTML = `
+    ${apImgUrl ? `<img class="ap-photo" src="${apImgUrl}" alt="">` : ''}
     <div class="ap-title">${escapeHtml(s.style)} — ${escapeHtml(s.desc)}</div>
     <div class="ap-desc">MRP ₹${s.mrp} · Case pack ${s.casepack} · ${s.brand ? 'Brand '+escapeHtml(s.brand) : 'Category '+escapeHtml(s.category||'—')}</div>
     <div class="field" style="margin-bottom:6px;">
@@ -3345,7 +3392,9 @@ function renderCart(){
 function cartItemHtml(l){
   const badgeClass = l.validation==='Accepted' ? 'ok' : 'bad';
   const styleAttr = escapeHtml(l.style);
+  const imgUrl = productImageUrl(l.style, 'thumb');
   return `<div class="cart-item ${l.validation==='Accepted'?'accepted':'rejected'}" data-style="${styleAttr}">
+    ${imgUrl ? `<img class="ci-thumb" src="${imgUrl}" alt="" loading="lazy">` : ''}
     <div style="flex:1; min-width:0;">
       <div class="ci-name">${escapeHtml(l.sku.style)} — ${escapeHtml(l.sku.desc)}</div>
       <div class="ci-sub">₹${l.sku.mrp} MRP · Case ${l.sku.casepack}</div>
