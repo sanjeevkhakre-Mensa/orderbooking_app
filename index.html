@@ -1937,7 +1937,7 @@ function renderInventoryTable(){
       const haystack = normSpace(inv.style) + ' ' + normSpace(desc);
       return tokens.every(t => haystack.includes(t));
     })
-    .sort((a,b) => a.inv.style.localeCompare(b.inv.style));
+    .sort((a,b) => a.desc.localeCompare(b.desc));
 
   if(rows.length === 0){
     els.invTableBody.innerHTML = `<tr class="inv-empty-row"><td colspan="9">${Object.keys(LIVE_INVENTORY).length===0 ? 'No inventory data yet — run Sync Inventory Now or wait for the next scheduled sync.' : 'No SKUs match your search.'}</td></tr>`;
