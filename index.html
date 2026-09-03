@@ -682,7 +682,7 @@
         <div class="inv-table-wrap">
           <table class="inv-table">
             <thead>
-              <tr><th>SKU</th><th>Bhiwandi</th><th>GGN</th><th>BLR</th><th>Total Stock</th><th>Booked Qty</th><th>Available Stock</th><th>Last Updated</th><th>Product</th></tr>
+              <tr id="invTableHeadRow"><th>SKU</th><th>Bhiwandi</th><th>GGN</th><th>BLR</th><th>Total Stock</th><th>Booked Qty</th><th>Available Stock</th><th>Last Updated</th><th>Product</th></tr>
             </thead>
             <tbody id="invTableBody"></tbody>
           </table>
@@ -1178,7 +1178,7 @@ const state = {
 const els = {};
 ['orderNo','orderNoHint','customerName','buyerResults','salesChannel',
  'historyBtn','summaryBtn','historyOverlay','historyBody','historyClose','historyTitle',
- 'inventoryBtn','inventoryOverlay','inventoryClose','invSyncStatus','invSearch','invTableBody',
+ 'inventoryBtn','inventoryOverlay','inventoryClose','invSyncStatus','invSearch','invTableBody','invTableHeadRow',
  'invUnmatchedToggle','invUnmatchedBody','btnSyncInventoryNow',
  'marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
  'productSearch','comboResults','btnScanBarcode','scannerOverlay','scannerClose','scannerVideo','scannerStatus','salesChannelHint',
@@ -1263,6 +1263,15 @@ let BUYER_CHANNEL_LOCK_EXEMPT = {};
 // buyer_code column (see marginFromMasterFor). Also populated in
 // rowsToCustomers().
 let BUYER_CODES = {};
+
+// Raw region-qualified channel per customer label ("West GT"/"North GT"/
+// "South GT"/"East GT"/"Supplement", or an unmapped value like "Zepto") —
+// the join key into CHANNEL_WAREHOUSES via warehousesForCustomer(). Only
+// set when a label maps to exactly one distinct raw channel across its
+// Customer Master row(s); left unset (→ "show all locations") when a
+// label has no channel on file, or genuinely conflicting ones, same
+// "don't guess" reasoning as BUYER_CHANNELS. Populated in rowsToCustomers().
+let BUYER_REGION_CHANNEL = {};
 
 // Per-Buyer-per-Product margin overrides from the Margin_Master tab —
 // keyed by "<buyer_code>|<style_id>". A number means exactly one margin
@@ -1401,6 +1410,49 @@ function normalizeSalesChannel(raw){
   return '';
 }
 
+// Unlike normalizeSalesChannel() above (which collapses every GT region
+// down to one flat 'General Trade' for the Sales Channel dropdown), the
+// warehouse-visibility rule below needs the REGION back — "South GT" and
+// "North GT" are fulfilled from different warehouses even though both are
+// just "General Trade" for pricing/catalog purposes. Only fixes up casing
+// ("West Gt" / "West GT" both appear in the sheet for the same channel) —
+// anything that isn't a recognized GT region or "Supplement" (Zepto,
+// Blinkit, Institutions, Export, blank, ...) passes through unchanged and
+// simply won't match CHANNEL_WAREHOUSES below, falling back to "show all
+// locations" rather than guessing a scope for a channel with no defined rule.
+function normalizeRegionChannel(raw){
+  const v = String(raw||'').trim();
+  if(!v) return '';
+  if(/^supplement$/i.test(v)) return 'Supplement';
+  const m = v.match(/^(west|north|south|east)\s*gt$/i);
+  return m ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() + ' GT' : v;
+}
+
+// Which warehouses actually fulfil each Sales Channel — a customer should
+// only see/be checked against stock in a warehouse that can actually ship
+// to them, not aggregate stock that includes locations irrelevant to them.
+const CHANNEL_WAREHOUSES = {
+  'West GT': ['bhiwandi', 'blr'],
+  'Supplement': ['bhiwandi'],
+  'North GT': ['bhiwandi', 'ggn'],
+  'South GT': ['bhiwandi', 'blr'],
+  'East GT': ['bhiwandi']
+};
+
+const WAREHOUSE_LABELS = { bhiwandi: 'Bhiwandi', ggn: 'GGN', blr: 'BLR' };
+
+// Returns the warehouse keys ('bhiwandi'/'ggn'/'blr') this customer's
+// channel can be fulfilled from, or null when their channel isn't one of
+// the five mapped above (an unmapped channel like Zepto/Institutions, no
+// customer selected yet, or a customer whose raw channel is itself
+// ambiguous across duplicate Customer Master rows — see BUYER_REGION_CHANNEL).
+// null means "show/use all locations", same as before this feature existed,
+// rather than silently guessing a scope that might hide real stock.
+function warehousesForCustomer(customerLabel){
+  const channel = BUYER_REGION_CHANNEL[customerLabel];
+  return (channel && CHANNEL_WAREHOUSES[channel]) || null;
+}
+
 function rowsToCustomers(rows){
   // Side effect (see BUYER_CHANNELS' own comment): rebuilt fresh on every
   // call, same "replaced wholesale, never merged" pattern as BUYERS itself.
@@ -1413,6 +1465,7 @@ function rowsToCustomers(rows){
   // auto-fill" apart from "this buyer genuinely spans two — don't guess,
   // let them pick."
   const channelsSeen = {};
+  const regionChannelsSeen = {};
   const lockExempt = {};
   const codes = {};
   const labels = rows.map(r=>{
@@ -1421,10 +1474,16 @@ function rowsToCustomers(rows){
     const city = pickCol(r, ['City']);
     const state = pickCol(r, ['State']);
     const label = [name, city, state].filter(Boolean).join('-');
-    const channel = normalizeSalesChannel(pickCol(r, ['Sales_Channel','Sales Channel','Channel']));
+    const rawChannel = pickCol(r, ['Sales_Channel','Sales Channel','Channel']);
+    const channel = normalizeSalesChannel(rawChannel);
     if(channel){
       if(!channelsSeen[label]) channelsSeen[label] = new Set();
       channelsSeen[label].add(channel);
+    }
+    const regionChannel = normalizeRegionChannel(rawChannel);
+    if(regionChannel){
+      if(!regionChannelsSeen[label]) regionChannelsSeen[label] = new Set();
+      regionChannelsSeen[label].add(regionChannel);
     }
     if(CHANNEL_LOCK_EXEMPT_NAMES.some(ex => namesRoughlyMatch(name, ex))) lockExempt[label] = true;
     // Buyer Id — the join key into Margin_Master's buyer_code column (see
@@ -1444,9 +1503,18 @@ function rowsToCustomers(rows){
     // "ambiguous, leave it to the dropdown" rather than picking either one.
     channels[label] = set.size === 1 ? [...set][0] : [...set].sort();
   });
+  const regionChannels = {};
+  Object.keys(regionChannelsSeen).forEach(label=>{
+    const set = regionChannelsSeen[label];
+    // Only keep it when unambiguous — see warehousesForCustomer(), which
+    // treats a missing entry as "show all locations" rather than guessing
+    // between two conflicting channels for the same customer.
+    if(set.size === 1) regionChannels[label] = [...set][0];
+  });
   BUYER_CHANNELS = channels;
   BUYER_CHANNEL_LOCK_EXEMPT = lockExempt;
   BUYER_CODES = codes;
+  BUYER_REGION_CHANNEL = regionChannels;
   return labels;
 }
 
@@ -1939,26 +2007,47 @@ function renderInventoryTable(){
     })
     .sort((a,b) => a.desc.localeCompare(b.desc));
 
+  // Whichever customer is currently selected in the order being built
+  // decides which warehouse columns are even relevant here — same rule
+  // (and same fallback to "show everything" for an unmapped channel or no
+  // customer yet) as the add-to-order panel's own stock check.
+  const warehouses = warehousesForCustomer(els.customerName ? els.customerName.value : '');
+  const scoped = !!warehouses;
+  const shownWarehouses = scoped ? warehouses : ['bhiwandi','ggn','blr'];
+
+  if(els.invTableHeadRow){
+    const warehouseHeaders = shownWarehouses.map(w => `<th>${WAREHOUSE_LABELS[w]}</th>`).join('');
+    els.invTableHeadRow.innerHTML =
+      `<th>SKU</th>${warehouseHeaders}<th>Total Stock</th><th>Booked Qty</th><th>Available Stock</th><th>Last Updated</th><th>Product</th>`;
+  }
+  const totalCols = 1 + shownWarehouses.length + 5; // SKU + warehouses + Total/Booked/Available/Last Updated/Product
+
   if(rows.length === 0){
-    els.invTableBody.innerHTML = `<tr class="inv-empty-row"><td colspan="9">${Object.keys(LIVE_INVENTORY).length===0 ? 'No inventory data yet — run Sync Inventory Now or wait for the next scheduled sync.' : 'No SKUs match your search.'}</td></tr>`;
+    els.invTableBody.innerHTML = `<tr class="inv-empty-row"><td colspan="${totalCols}">${Object.keys(LIVE_INVENTORY).length===0 ? 'No inventory data yet — run Sync Inventory Now or wait for the next scheduled sync.' : 'No SKUs match your search.'}</td></tr>`;
     return;
   }
 
   els.invTableBody.innerHTML = rows.map(({inv, desc}) => {
-    const remainingCls = inv.remaining<=0 ? 'inv-qty-bad' : (inv.remaining < inv.booked ? 'inv-qty-warn' : '');
+    // Scoped Total/Available reflect only the warehouses relevant to this
+    // customer, not the grand total across every location — the whole
+    // point of this feature is showing what's actually relevant to them.
+    // Booked Qty has no per-warehouse breakdown in the data (see
+    // rowsToInventory), so it's shown as-is either way.
+    const scopedTotal = scoped ? shownWarehouses.reduce((sum,w)=>sum+(inv[w]||0), 0) : inv.all;
+    const scopedRemaining = scoped ? Math.max(0, scopedTotal - inv.booked) : inv.remaining;
+    const remainingCls = scopedRemaining<=0 ? 'inv-qty-bad' : (scopedRemaining < inv.booked ? 'inv-qty-warn' : '');
     // Same fallback as renderInvSyncStatusLine() — the manually-pasted
     // Increff export has no per-row timestamp column, so every row falls
     // back to when this device last successfully pulled the whole sheet.
     const rowSyncedAt = inv.syncedAt || (masterData.status.inventory && masterData.status.inventory.updatedAt) || null;
     const updated = rowSyncedAt ? new Date(rowSyncedAt).toLocaleString('en-IN', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : '—';
+    const warehouseCells = shownWarehouses.map(w => `<td>${fmtNum(inv[w])}</td>`).join('');
     return `<tr>
       <td>${inv.style}</td>
-      <td>${fmtNum(inv.bhiwandi)}</td>
-      <td>${fmtNum(inv.ggn)}</td>
-      <td>${fmtNum(inv.blr)}</td>
-      <td>${fmtNum(inv.all)}</td>
+      ${warehouseCells}
+      <td>${fmtNum(scopedTotal)}</td>
       <td>${fmtNum(inv.booked)}</td>
-      <td class="${remainingCls}">${fmtNum(inv.remaining)}</td>
+      <td class="${remainingCls}">${fmtNum(scopedRemaining)}</td>
       <td>${updated}</td>
       <td>${desc || '—'}</td>
     </tr>`;
@@ -1985,11 +2074,18 @@ function renderInvSyncStatusLine(){
   const isStale = staleMs !== null && staleMs > INVENTORY_STALE_AFTER_HOURS*3600*1000;
   const when = syncedAt ? new Date(syncedAt).toLocaleString('en-IN', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : 'never';
 
+  // Tells the rep WHY the warehouse columns below might not be the usual
+  // three — see warehousesForCustomer()/CHANNEL_WAREHOUSES.
+  const scopeWarehouses = warehousesForCustomer(els.customerName ? els.customerName.value : '');
+  const scopeSuffix = scopeWarehouses
+    ? ` — showing ${BUYER_REGION_CHANNEL[els.customerName.value]} warehouses (${scopeWarehouses.map(w=>WAREHOUSE_LABELS[w]).join(' + ')})`
+    : '';
+
   if(isStale){
-    els.invSyncStatus.textContent = `Last Inventory Sync: ${when} — ⏱ may be out of date`;
+    els.invSyncStatus.textContent = `Last Inventory Sync: ${when} — ⏱ may be out of date${scopeSuffix}`;
     els.invSyncStatus.className = 'inv-syncstatus warn';
   } else {
-    els.invSyncStatus.textContent = `Last Inventory Sync: ${when} ✓`;
+    els.invSyncStatus.textContent = `Last Inventory Sync: ${when} ✓${scopeSuffix}`;
     els.invSyncStatus.className = 'inv-syncstatus ok';
   }
 }
@@ -2755,15 +2851,20 @@ function openAddPanel(style){
       invBox.innerHTML = `<div class="inv-row"><span>Live Inventory</span><span>No data for this SKU</span></div>`;
       return;
     }
-    const lk = locKey();
-    const scoped = lk==='bhiwandi' || lk==='ggn' || lk==='blr';
-    const available = lk==='bhiwandi' ? inv.bhiwandi : lk==='ggn' ? inv.ggn : lk==='blr' ? inv.blr : inv.all;
-    const locSuffix = scoped ? ` (${locLabel()})` : '';
+    // Scoped to whichever warehouses the CUSTOMER's Sales Channel is
+    // actually fulfilled from (see CHANNEL_WAREHOUSES) — a West GT buyer
+    // shouldn't see GGN-only stock counted as "available" to them when GGN
+    // can't actually ship there. Falls back to aggregate ("all locations")
+    // for a channel with no defined rule, or no customer selected yet.
+    const warehouses = warehousesForCustomer(els.customerName.value);
+    const scoped = !!warehouses;
+    const available = scoped ? warehouses.reduce((sum,w)=>sum+(inv[w]||0),0) : inv.all;
+    const locSuffix = scoped ? ` (${BUYER_REGION_CHANNEL[els.customerName.value]}: ${warehouses.map(w=>WAREHOUSE_LABELS[w]).join(' + ')})` : '';
 
     let cls, status, extra = '';
     if(available<=0){
       cls='bad'; status='Not Available';
-      extra = `<div class="inv-suggestion">⚠ Out of stock${locSuffix} — select another SKU${scoped? ' or check the other location':''}.</div>`;
+      extra = `<div class="inv-suggestion">⚠ Out of stock${locSuffix} — select another SKU.</div>`;
     } else if(qty>0 && qty>available){
       cls='warn'; status='Partially Available';
       extra = `<div class="inv-suggestion">⚠ Only ${available} available${locSuffix} — reduce the quantity to ${available} or fewer, or select another SKU.</div>`;
