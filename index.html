@@ -499,7 +499,6 @@
   .review-recap{ font-size:12.5px; color:#334; display:flex; flex-direction:column; gap:4px; }
   .review-recap .rr{ display:flex; justify-content:space-between; gap:8px; }
   .review-recap .rr span:first-child{ color:var(--muted); }
-  .edit-link{ font-size:11.5px; color:var(--blue-dark); font-weight:700; cursor:pointer; }
 
   .totals-box{ display:flex; justify-content:space-between; align-items:center; padding-top:8px; border-top:1px dashed var(--border); margin-top:8px; }
   .totals-box .tv{ font-size:19px; font-weight:800; color:var(--ink); }
@@ -841,14 +840,6 @@
         </div>
       </div>
 
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <h2 style="margin:0;">Order Details</h2>
-          <span class="edit-link" id="editOrderDetailsLink">Edit ✎</span>
-        </div>
-        <div class="review-recap" id="recapDetails" style="margin-top:8px;"></div>
-      </div>
-
       <div id="statusLine" class="status-line empty">NO PRODUCTS ADDED — search and add products above</div>
 
       <div class="card" style="display:flex; flex-direction:column; gap:10px;">
@@ -1138,9 +1129,9 @@ const els = {};
  'productSearch','comboResults','btnScanBarcode','scannerOverlay','scannerClose','scannerVideo','scannerStatus','salesChannelHint',
  'imgScanRow','btnImgScan','imgScanFile','imgScanStatus','imgScanResults',
  'addPanel','cartList','cartCount','miniSummary','msLines','msAccepted','msRejected','msValue',
- 'recapDetails','rvTotalValue',
+ 'rvTotalValue',
  'rvBeforeGst','rvGst',
- 'statusLine','sheetStatus','toast','editOrderDetailsLink',
+ 'statusLine','sheetStatus','toast',
  'masterDataBar','masterDataText','btnRefreshMasterData',
  'editingBanner','editingBannerText','btnCancelEdit',
  'selfCopyBanner','btnSendSelfCopy','btnDismissSelfCopy'
@@ -2964,23 +2955,15 @@ function renderCart(){
   els.msRejected.textContent = rejected;
   els.msValue.textContent = netOrderValue.toLocaleString('en-IN', {maximumFractionDigits:0});
 
-  // The Order Value Summary, Order Details recap and status line all live
-  // on the same page as the cart now (Products & Review were merged into a
-  // single step) — keep them in sync right here instead of in a
-  // separately-triggered render pass, so every cart/field change (add,
-  // edit, remove, sales channel, location, margins, customer name) is
-  // reflected immediately without relying on callers to remember a second
-  // render call.
+  // The Order Value Summary and status line both live on the same page as
+  // the cart now (Products & Review were merged into a single step) — keep
+  // them in sync right here instead of in a separately-triggered render
+  // pass, so every cart/field change (add, edit, remove, sales channel,
+  // location, margins, customer name) is reflected immediately without
+  // relying on callers to remember a second render call.
   els.rvBeforeGst.textContent = fmtMoney(totalBeforeGst);
   els.rvGst.textContent = fmtMoney(totalGst);
   els.rvTotalValue.textContent = fmtMoney(netOrderValue);
-
-  els.recapDetails.innerHTML = [
-    ['Order Number', els.orderNo.value || '—'],
-    ['Customer Name', els.customerName.value || '—'],
-    ['Sales Channel', els.salesChannel.value || '—'],
-    ['Location', locLabel() || '—'],
-  ].map(([k,v])=>`<div class="rr"><span>${k}</span><span>${v}</span></div>`).join('');
 
   const statusEl = els.statusLine;
   if(lines.length===0){
@@ -3076,8 +3059,6 @@ function validateRequiredFields(){
   });
   return firstInvalid ? {ok:false, field:firstInvalid} : {ok:true};
 }
-
-els.editOrderDetailsLink.addEventListener('click', ()=> scrollToField(els.customerName));
 
 // ============================================================================
 // ORDER FILE / MESSAGE GENERATION
