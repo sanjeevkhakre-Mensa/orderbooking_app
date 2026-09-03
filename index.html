@@ -245,29 +245,8 @@
     border-color:transparent; padding:6px 8px;
   }
 
-  /* ---------------- Stepper ---------------- */
-  .stepper{
-    display:flex;
-    background:#fff;
-    border-bottom:1px solid var(--border);
-    padding:10px 10px 8px;
-    position:sticky; top:0; z-index:5;
-  }
-  .step{ flex:1; text-align:center; color:var(--muted); cursor:pointer; user-select:none; }
-  .step .num{
-    display:inline-flex; align-items:center; justify-content:center;
-    width:24px; height:24px; border-radius:50%;
-    background:var(--gray-bg); color:var(--muted);
-    font-size:12px; font-weight:700; margin-bottom:3px;
-  }
-  .step .lbl{ display:block; font-size:10px; font-weight:600; letter-spacing:.2px; text-transform:uppercase; }
-  .step.active .num{ background:var(--blue); color:#fff; }
-  .step.active .lbl{ color:var(--ink); }
-  .step.done .num{ background:var(--green-text); color:#fff; }
-  .step.done .lbl{ color:var(--green-text); }
-
   /* ---------------- Wizard body ---------------- */
-  .wizard{ flex:1; padding:14px 14px 90px; }
+  .wizard{ flex:1; padding:14px; }
   .panel-step{ display:flex; flex-direction:column; gap:12px; animation:fadein .18s ease; }
   @keyframes fadein{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
   .card{
@@ -292,8 +271,8 @@
      would turn every required dropdown red the instant the page loads —
      before the user has done anything — fighting for attention with
      whichever field is actually meant to be filled in first. Selects only
-     get marked invalid the JS way (validateRequiredFieldsIn, after an
-     actual failed Next/Submit attempt), matching how the other fields
+     get marked invalid the JS way (validateRequiredFields, after an
+     actual failed Submit attempt), matching how the other fields
      behave once they've been touched. */
   .field input:invalid:not(:placeholder-shown), .field textarea:invalid:not(:placeholder-shown){
     border-color:var(--red-text) !important;
@@ -604,18 +583,6 @@
   }
   .install-banner-close:hover{ opacity:.9; }
 
-  /* ---------------- Bottom nav ---------------- */
-  .wizard-nav{
-    position:fixed; left:0; right:0; bottom:0;
-    max-width:640px; margin:0 auto;
-    background:#fff; border-top:1px solid var(--border);
-    padding:10px 14px; padding-bottom:calc(10px + env(safe-area-inset-bottom));
-    display:flex; gap:10px; align-items:center;
-    box-shadow:0 -2px 10px rgba(16,24,40,0.06);
-  }
-  .wizard-nav .btn{ flex:1; }
-  .wizard-nav .nav-info{ flex:0 0 auto; font-size:11px; color:var(--muted); text-align:center; min-width:56px; }
-
   a.copy-link, .toast{ }
   .toast{
     position:fixed; top:14px; left:50%; transform:translateX(-50%);
@@ -629,11 +596,11 @@
 
   /* ---------------- Wider screens: a little breathing room ---------------- */
   @media (min-width:520px){
-    .wizard{ padding:20px 20px 96px; }
+    .wizard{ padding:20px; }
     .grid2{ grid-template-columns:1fr 1fr; }
   }
   @media print{
-    .stepper, .wizard-nav, .combo-results, .mini-summary{ display:none !important; }
+    .combo-results, .mini-summary{ display:none !important; }
   }
 </style>
 </head>
@@ -757,14 +724,9 @@
     <button type="button" class="scb-dismiss" id="btnDismissSelfCopy" title="Dismiss">✕</button>
   </div>
 
-  <div class="stepper" id="stepper">
-    <div class="step active" data-step="1"><span class="num">1</span><span class="lbl">Order Setup</span></div>
-    <div class="step" data-step="2"><span class="num">2</span><span class="lbl">Products &amp; Review</span></div>
-  </div>
-
   <main class="wizard">
 
-    <!-- STEP 1 : ORDER SETUP (Details + Pricing & Fulfilment) -->
+    <!-- ORDER SETUP (Details + Pricing & Fulfilment) -->
     <section class="panel-step" id="step-1">
       <div class="card">
         <h2>Order Details<span class="hint2">Order Number is generated for you — start by choosing the customer</span></h2>
@@ -825,8 +787,8 @@
       </div>
     </section>
 
-    <!-- STEP 2 : PRODUCTS & REVIEW (Add Products + Cart + Validation/Value Summary + Submit) -->
-    <section class="panel-step" id="step-2" hidden>
+    <!-- PRODUCTS & REVIEW (Add Products + Cart + Validation/Value Summary + Submit) -->
+    <section class="panel-step" id="step-2">
       <div class="card">
         <h2>Search &amp; Add Products<span class="hint2">Type a style code, product name or EAN to find an item fast</span></h2>
         <div class="field">
@@ -890,7 +852,7 @@
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <h2 style="margin:0;">Order Details</h2>
-          <span class="edit-link" data-goto="1">Edit ✎</span>
+          <span class="edit-link" id="editOrderDetailsLink">Edit ✎</span>
         </div>
         <div class="review-recap" id="recapDetails" style="margin-top:8px;"></div>
       </div>
@@ -907,12 +869,6 @@
     </section>
 
   </main>
-
-  <div class="wizard-nav">
-    <button class="btn btn-outline" id="btnBack">‹ Back</button>
-    <div class="nav-info" id="navInfo">Step 1 / 2</div>
-    <button class="btn btn-primary" id="btnNext">Next ›</button>
-  </div>
 
   <div class="toast" id="toast"></div>
 </div>
@@ -1164,7 +1120,6 @@ function loadSubmittedOrderNos(){
 }
 
 const state = {
-  step: 1,
   // Cart lines are keyed by the product's style code (not its array index)
   // on purpose: once master data can be refreshed live from Google Sheets
   // mid-session (see MASTER DATA section below), the row order/positions in
@@ -1193,7 +1148,7 @@ const els = {};
  'addPanel','cartList','cartCount','miniSummary','msLines','msAccepted','msRejected','msValue',
  'rvLines','rvAccepted','rvRejected','rejectList','recapDetails','rvTotalValue',
  'rvBeforeGst','rvGst',
- 'statusLine','sheetStatus','btnBack','btnNext','navInfo','toast','stepper',
+ 'statusLine','sheetStatus','toast','editOrderDetailsLink',
  'masterDataBar','masterDataText','btnRefreshMasterData',
  'editingBanner','editingBannerText','btnCancelEdit',
  'selfCopyBanner','btnSendSelfCopy','btnDismissSelfCopy'
@@ -3078,93 +3033,36 @@ function updateSheetStatus(){
 }
 
 // ============================================================================
-// STEP NAVIGATION
+// FIELD VALIDATION / SCROLLING
+// Order Setup and Products & Review used to be two separate wizard steps;
+// they're now both always on screen as one continuous page, so all that's
+// left here is checking required fields and scrolling/focusing to whichever
+// one is empty — no step-switching involved.
 // ============================================================================
-function goToStep(n){
-  state.step = n;
-  document.querySelectorAll('.panel-step').forEach(p=>p.hidden = true);
-  document.getElementById('step-'+n).hidden = false;
-  document.querySelectorAll('.step').forEach(s=>{
-    const sn = parseInt(s.dataset.step,10);
-    s.classList.toggle('active', sn===n);
-    s.classList.toggle('done', sn<n);
-  });
-  els.navInfo.textContent = `Step ${n} / 2`;
-  els.btnBack.disabled = (n===1);
-  els.btnNext.textContent = (n===2) ? 'Done ✓' : 'Next ›';
-  els.btnNext.hidden = (n===2);
-  if(n===2) renderCart();
-  window.scrollTo({top:0, behavior:'smooth'});
-}
-
-// Shared by validateAllSteps() (used on Submit) and the Next button's
-// per-step check below, so the "which fields count as required right now"
-// rule only has to live in one place.
-function validateRequiredFieldsIn(stepEl){
-  const requiredFields = stepEl.querySelectorAll('[required]');
-  let firstInvalid = null;
-  requiredFields.forEach(field=>{
-    // Margin fields belonging to the sales channel that ISN'T currently
-    // selected are hidden and irrelevant — don't block on those. Note:
-    // this deliberately ignores stepEl's OWN [hidden] attribute (checked
-    // via `!== stepEl` below) — validateAllSteps() calls this on steps
-    // that aren't the one currently on screen (e.g. after a user jumps
-    // straight to step 2 via the stepper tabs), and stepEl itself is
-    // `hidden` in that case. Without this distinction, every required
-    // field in an off-screen step would look "hidden" and silently skip
-    // validation, letting Submit fire with a blank customer name, etc.
-    const hiddenAncestor = field.closest('[hidden]');
-    if(hiddenAncestor && hiddenAncestor !== stepEl) return;
-    const empty = !field.value || String(field.value).trim()==='';
-    field.style.borderColor = empty ? 'var(--red-text)' : '';
-    if(empty && !firstInvalid) firstInvalid = field;
-  });
-  return firstInvalid;
-}
-
-// Validates every required field across ALL steps (Order Details + Pricing
-// live in step 1; nothing in step 2 is currently marked required, but this
-// stays generic in case that changes), not just whichever step is currently
-// open. This matters because the stepper tabs at the top let a user jump
-// straight to Products & Review (step 2) without ever passing through
-// btnNext's per-step check below — without this, Submit could fire with a
-// blank customer name, sales channel, etc.
-function validateAllSteps(){
-  for(let step=1; step<=2; step++){
-    const invalid = validateRequiredFieldsIn(document.getElementById('step-'+step));
-    if(invalid) return {ok:false, field:invalid};
-  }
-  return {ok:true};
-}
-
-function jumpToInvalidField(field){
-  const stepEl = field.closest('.panel-step');
-  const stepNum = stepEl ? parseInt(stepEl.id.replace('step-',''),10) : 1;
-  goToStep(stepNum);
+function scrollToField(field){
+  field.scrollIntoView({behavior:'smooth', block:'center'});
   field.style.borderColor = 'var(--red-text)';
   field.focus();
 }
 
-document.getElementById('btnNext').addEventListener('click', ()=>{
-  if(state.step>=2) return;
-  const currentStep = document.getElementById('step-'+state.step);
-  const invalid = validateRequiredFieldsIn(currentStep);
-  if(invalid){
-    toast('Please fill in all required fields');
-    invalid.focus();
-  } else {
-    goToStep(state.step+1);
-  }
-});
-document.getElementById('btnBack').addEventListener('click', ()=>{
-  if(state.step>1) goToStep(state.step-1);
-});
-document.querySelectorAll('.step').forEach(s=>{
-  s.addEventListener('click', ()=> goToStep(parseInt(s.dataset.step,10)));
-});
-document.querySelectorAll('.edit-link').forEach(el=>{
-  el.addEventListener('click', ()=> goToStep(parseInt(el.dataset.goto,10)));
-});
+// Used by the Submit button below — checks every required field on the page
+// (Order Details + the hidden Pricing & Fulfilment fallback fields) in one
+// pass. Skips anything genuinely hidden (e.g. the margin dropdowns for the
+// sales channel that ISN'T selected, or the Pricing & Fulfilment card itself)
+// so those never block Submit.
+function validateRequiredFields(){
+  const requiredFields = document.querySelectorAll('[required]');
+  let firstInvalid = null;
+  requiredFields.forEach(field=>{
+    if(field.closest('[hidden]')) return;
+    const empty = !field.value || String(field.value).trim()==='';
+    field.style.borderColor = empty ? 'var(--red-text)' : '';
+    if(empty && !firstInvalid) firstInvalid = field;
+  });
+  return firstInvalid ? {ok:false, field:firstInvalid} : {ok:true};
+}
+
+els.editOrderDetailsLink.addEventListener('click', ()=> scrollToField(els.customerName));
 
 // ============================================================================
 // ORDER FILE / MESSAGE GENERATION
@@ -3402,27 +3300,25 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   // still in flight (network round-trip to the sheet, native share sheet, etc).
   if(state.isSubmitting) return;
 
-  // Guard #2: every required field, across every step — not just the one
-  // currently on screen. A user can jump straight to Review via the stepper
-  // tabs, bypassing btnNext's per-step check, so Submit re-checks everything.
-  const fieldCheck = validateAllSteps();
+  // Guard #2: every required field on the page.
+  const fieldCheck = validateRequiredFields();
   if(!fieldCheck.ok){
     toast('Please fill in all required fields before submitting');
-    jumpToInvalidField(fieldCheck.field);
+    scrollToField(fieldCheck.field);
     return;
   }
 
   const payload = buildOrderPayload();
   if(payload.lines.length===0){
     toast('Add at least one product before submitting');
-    goToStep(2);
+    scrollToField(els.productSearch);
     return;
   }
   if(!payload.lines.some(l=>l.validation==='Accepted')){
     // Every line is rejected (bad qty/price) — the export only ever
     // contains Accepted lines, so there'd be nothing but a header row.
     toast('Every product line is rejected — fix them before submitting');
-    goToStep(2);
+    els.cartList.scrollIntoView({behavior:'smooth', block:'start'});
     return;
   }
 
@@ -3626,7 +3522,7 @@ function resetForm(){
   closeAddPanel();
   updateMarginFieldsVisibility();
   renderCart();
-  goToStep(1);
+  window.scrollTo({top:0, behavior:'smooth'});
   // Customer Name is the first thing a rep fills in for every new order —
   // put the cursor there so they can start typing immediately.
   els.customerName.focus();
@@ -4102,7 +3998,7 @@ function loadOrderIntoWizard(order){
   renderCart();
   updateMarginFieldsVisibility();
   showEditingBanner(order.orderNo);
-  goToStep(1);
+  window.scrollTo({top:0, behavior:'smooth'});
   toast(`Editing Order ${order.orderNo} — make your changes, then Submit to update it.`);
 }
 
@@ -4124,9 +4020,8 @@ els.historyOverlay.addEventListener('click', (e)=>{
 // init
 updateSheetStatus();
 renderCart();
-goToStep(1);
-// Customer Name is step 1's first field and the natural starting point for
-// every order — focus it on first load (skip on very small/touch screens
+// Customer Name is the page's first field and the natural starting point
+// for every order — focus it on first load (skip on very small/touch screens
 // where an unsolicited focus would pop the keyboard before the user is ready).
 if(window.matchMedia && window.matchMedia('(min-width:521px)').matches){
   els.customerName.focus();
