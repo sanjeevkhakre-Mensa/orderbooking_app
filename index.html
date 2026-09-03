@@ -319,11 +319,33 @@
   .combo-item .ci-l{ min-width:0; }
   .combo-item .ci-style{ font-weight:800; font-size:12.5px; color:var(--ink); }
   .combo-item .ci-desc{ font-size:11.5px; color:#556; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .combo-item .ci-r{ text-align:right; flex-shrink:0; }
+  .combo-item .ci-r{ text-align:right; flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
   .combo-item .ci-mrp{ font-size:12px; font-weight:700; color:var(--ink); }
-  .stock-badge{ font-size:9.5px; font-weight:700; padding:2px 6px; border-radius:20px; display:inline-block; margin-top:2px; }
+  .stock-badge{ font-size:9.5px; font-weight:700; padding:2px 6px; border-radius:20px; display:inline-block; }
   .stock-badge.in{ background:var(--green-bg); color:var(--green-text); }
   .stock-badge.out{ background:var(--gray-bg); color:var(--gray-text); }
+  /* Amazon/Flipkart-style one-tap add on the search result row itself —
+     see comboRowControlsHtml(). ADD skips the Add-to-Order panel for the
+     common case; once a SKU is in the cart the row shows a qty stepper
+     (in boxes/cases, the same unit the panel's # Boxes field uses)
+     instead, so a rep can keep adjusting or add more items without
+     leaving the search results. The comboResults click handler checks for
+     these buttons before it checks for a plain row click, so tapping one
+     never also triggers the row's click-to-open-panel behavior. */
+  .combo-add-btn{
+    background:var(--blue); color:#fff; border:none; border-radius:16px;
+    padding:5px 14px; font-size:11.5px; font-weight:800; cursor:pointer; letter-spacing:.2px;
+  }
+  .combo-add-btn:hover{ background:var(--blue-dark); }
+  .combo-stepper{
+    display:flex; align-items:center; border:1.5px solid var(--blue); border-radius:16px; overflow:hidden;
+  }
+  .combo-stepper button{
+    background:var(--blue); color:#fff; border:none; width:24px; height:24px;
+    font-size:14px; font-weight:800; cursor:pointer; line-height:1;
+  }
+  .combo-stepper button:hover{ background:var(--blue-dark); }
+  .combo-stepper-qty{ min-width:22px; text-align:center; font-size:12px; font-weight:800; color:var(--ink); padding:0 4px; }
   .combo-empty{ padding:14px; text-align:center; color:var(--muted); font-size:12.5px; }
   .combo-empty.new-customer{ color:var(--green-text); background:var(--green-bg); border-radius:8px; font-weight:600; }
 
@@ -2376,37 +2398,131 @@ function findSkuByStyle(style){
   return activeSkus().find(s => s.style === style);
 }
 
-els.productSearch.addEventListener('input', ()=>{
+function searchProductMatches(){
   const qRaw = normSpace(els.productSearch.value);
-  if(!qRaw){ els.comboResults.hidden = true; els.comboResults.innerHTML=''; return; }
+  if(!qRaw) return null;
   const tokens = qRaw.split(' ').filter(Boolean);
-  const matches = activeSkus()
-    .map((s,i)=>({s,i}))
-    .filter(({s})=>{
+  return activeSkus()
+    .filter(s=>{
       const haystack = normSpace(s.style) + ' ' + normSpace(s.desc) + ' ' + s.ean;
       return tokens.every(t => haystack.includes(t));
     })
     .slice(0,8);
+}
 
+// Amazon/Flipkart-style controls for one search result row: a one-tap ADD
+// button for the common case, a qty stepper once it's in the cart, or
+// nothing extra when the row needs the full Add-to-Order panel (tapping
+// the row itself still opens that, same as before this feature existed).
+function comboRowControlsHtml(s){
+  const existing = state.cart.find(c=>c.style===s.style);
+  const buyerCode = BUYER_CODES[els.customerName.value];
+  const marginResult = marginFromMasterFor(buyerCode, s.style);
+  const available = scopedAvailableStock(s.style, els.customerName.value);
+
+  let badge = '';
+  if(available !== null){
+    if(available <= 0) badge = `<span class="stock-badge out">Out of Stock</span>`;
+    else if(available < s.casepack) badge = `<span class="stock-badge out">Only ${available} left</span>`;
+  }
+
+  if(existing){
+    const boxes = Math.round((existing.qty / s.casepack) * 100) / 100;
+    return `${badge}<div class="combo-stepper">
+      <button type="button" data-dec-style="${escapeAttr(s.style)}">−</button>
+      <span class="combo-stepper-qty">${boxes}</span>
+      <button type="button" data-inc-style="${escapeAttr(s.style)}">+</button>
+    </div>`;
+  }
+
+  // A brand-new line can only skip straight to the cart when the margin
+  // resolves cleanly (marginResult.status==='ok') and there's enough stock
+  // for at least one full case — anything else (no margin on file, a
+  // Margin_Master conflict, a SAMPLE item, or insufficient stock) needs the
+  // rep to see the Add-to-Order panel's context before it's added, so
+  // those rows fall back to the plain tap-the-row-to-open-panel flow.
+  const canQuickAdd = marginResult.status === 'ok' && (available === null || available >= s.casepack);
+  if(canQuickAdd){
+    return `${badge}<button type="button" class="combo-add-btn" data-add-style="${escapeAttr(s.style)}">ADD</button>`;
+  }
+  return badge;
+}
+
+function renderComboResults(){
+  const matches = searchProductMatches();
+  if(matches === null) return;
   if(matches.length===0){
     els.comboResults.innerHTML = '<div class="combo-empty">No products match your search.</div>';
   } else {
-    els.comboResults.innerHTML = matches.map(({s})=>{
-      return `<div class="combo-item" data-style="${escapeAttr(s.style)}">
+    els.comboResults.innerHTML = matches.map(s => `<div class="combo-item" data-style="${escapeAttr(s.style)}">
         <div class="ci-l">
           <div class="ci-style">${s.style}</div>
           <div class="ci-desc">${s.desc}</div>
         </div>
         <div class="ci-r">
           <div class="ci-mrp">₹${s.mrp}</div>
+          ${comboRowControlsHtml(s)}
         </div>
-      </div>`;
-    }).join('');
+      </div>`).join('');
   }
   els.comboResults.hidden = false;
+}
+
+els.productSearch.addEventListener('input', ()=>{
+  if(!normSpace(els.productSearch.value)){ els.comboResults.hidden = true; els.comboResults.innerHTML=''; return; }
+  renderComboResults();
 });
 
+// One-tap add — skips the Add-to-Order panel entirely for the common case
+// (see comboRowControlsHtml for when a row even offers this button).
+// Doesn't touch the search box or hide the results, so a rep can keep
+// adding more items without retyping, same as Amazon/Flipkart's cart flow.
+function quickAddToCart(style){
+  const s = findSkuByStyle(style);
+  if(!s) return;
+  const buyerCode = BUYER_CODES[els.customerName.value];
+  const marginResult = marginFromMasterFor(buyerCode, s.style);
+  if(marginResult.status !== 'ok') return; // row shouldn't have offered ADD — defensive only
+  const available = scopedAvailableStock(s.style, els.customerName.value);
+  if(available !== null && available < s.casepack){ toast(`⛔ Only ${available} available — can't add a full case`); return; }
+  state.cart.push({ style: s.style, qty: s.casepack, unitPrice: priceFromMarginPct(s, marginResult.pct), discount: 0, isSample: false });
+  renderCart();
+  renderComboResults();
+  toast(`${s.style} added — 1 case (${s.casepack} pcs)`);
+}
+
+function incrementCartLine(style){
+  const c = state.cart.find(c=>c.style===style);
+  const s = findSkuByStyle(style);
+  if(!c || !s) return;
+  const available = scopedAvailableStock(style, els.customerName.value);
+  const newQty = c.qty + s.casepack;
+  if(available !== null && newQty > available){ toast(`⛔ Only ${available} available for this customer`); return; }
+  c.qty = newQty;
+  renderCart();
+  renderComboResults();
+}
+
+function decrementCartLine(style){
+  const c = state.cart.find(c=>c.style===style);
+  const s = findSkuByStyle(style);
+  if(!c || !s) return;
+  c.qty -= s.casepack;
+  if(c.qty <= 0){
+    state.cart = state.cart.filter(x=>x.style!==style);
+    toast(`${style} removed`);
+  }
+  renderCart();
+  renderComboResults();
+}
+
 els.comboResults.addEventListener('click', (e)=>{
+  const addBtn = e.target.closest('[data-add-style]');
+  if(addBtn){ quickAddToCart(addBtn.dataset.addStyle); return; }
+  const incBtn = e.target.closest('[data-inc-style]');
+  if(incBtn){ incrementCartLine(incBtn.dataset.incStyle); return; }
+  const decBtn = e.target.closest('[data-dec-style]');
+  if(decBtn){ decrementCartLine(decBtn.dataset.decStyle); return; }
   const item = e.target.closest('.combo-item');
   if(!item) return;
   openAddPanel(item.dataset.style);
