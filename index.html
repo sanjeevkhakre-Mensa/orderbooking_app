@@ -2615,13 +2615,15 @@ function findSkuByStyle(style){
 // Static files under product-images/ — no build step, so this is just a
 // plain list of which style codes actually have one, kept in sync by hand
 // whenever a product-image folder gets processed (currently: "01 Peanut
-// Butter" only; "02 oats"/"Combos"/"otherrs" haven't been added yet). Two
-// sizes per style, generated once from the original photos (which ran
-// 40-580KB each — too heavy to load one per search result/cart line on a
-// rep's mobile data): thumb/ (max 120px, for the small square next to a
-// product in search results and Order Lines) and full/ (max 480px, for the
-// larger image at the top of the Add-to-Order panel).
-const PRODUCT_IMAGE_STYLES = new Set(['C12501','C12502','C12503','C202','C22701','C22702','C22703','C25002','C25003','C5102','C5103','C90001','C90002','CAB22702','DC1001','DC5101','DC5103','N12501','N25002','N5101','N51011','N90002','O12502','O22701','O5102','O90001','O90002','ZN5102']);
+// Butter" and "02 oats"; "Combos"/"otherrs" haven't been added yet — their
+// filenames aren't clean style codes the way these two folders' are, so
+// they'd need a closer look before processing the same way). Two sizes per
+// style, generated once from the original photos (which ran 40-800KB each
+// — too heavy to load one per search result/cart line on a rep's mobile
+// data): thumb/ (max 120px, for the small square next to a product in
+// search results and Order Lines) and full/ (max 480px, for the larger
+// image at the top of the Add-to-Order panel).
+const PRODUCT_IMAGE_STYLES = new Set(['C12501','C12502','C12503','C202','C22701','C22702','C22703','C25002','C25003','C5102','C5103','C90001','C90002','CAB22702','DC1001','DC5101','DC5103','N12501','N25002','N5101','N51011','N90002','O12502','O22701','O5102','O90001','O90002','ZN5102','COA20P','COA9001P','OA1001P']);
 
 // Returns null (not a broken-image URL) for a style with no photo yet, so
 // callers can skip rendering an <img> entirely rather than showing a
