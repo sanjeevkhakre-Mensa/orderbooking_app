@@ -2120,13 +2120,13 @@ function renderInventoryTable(){
     const updated = rowSyncedAt ? new Date(rowSyncedAt).toLocaleString('en-IN', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : '—';
     const warehouseCells = shownWarehouses.map(w => `<td>${fmtNum(inv[w])}</td>`).join('');
     return `<tr>
-      <td>${inv.style}</td>
+      <td>${escapeHtml(inv.style)}</td>
       ${warehouseCells}
       <td>${fmtNum(scopedTotal)}</td>
       <td>${fmtNum(inv.booked)}</td>
       <td class="${remainingCls}">${fmtNum(scopedRemaining)}</td>
       <td>${updated}</td>
-      <td>${desc || '—'}</td>
+      <td>${escapeHtml(desc || '—')}</td>
     </tr>`;
   }).join('');
 }
@@ -2189,7 +2189,7 @@ function renderInvUnmatchedSection(){
     const style = pickCol(r, ['Style ID']);
     const cat = pickCol(r, ['Category']);
     const size = pickCol(r, ['Size']);
-    return `<div class="inv-unmatched-row"><span>${style} (${[cat,size].filter(Boolean).join(', ')})</span><span>needs mapping in Product Master</span></div>`;
+    return `<div class="inv-unmatched-row"><span>${escapeHtml(style)} (${escapeHtml([cat,size].filter(Boolean).join(', '))})</span><span>needs mapping in Product Master</span></div>`;
   }).join('');
 }
 
@@ -2517,11 +2517,6 @@ function fmtNum(n){ return (n||0).toLocaleString('en-IN'); }
 // ============================================================================
 function normSpace(str){ return String(str).toLowerCase().replace(/\s+/g,' ').trim(); }
 
-// Safe to drop into an HTML attribute (used for style codes / buyer names
-// that flow from data — either the bundled arrays or a live Google Sheet —
-// into data-* attributes and combo-box markup).
-function escapeAttr(str){ return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
-
 // Looks up a product by style code in the CURRENTLY ACTIVE channel's master
 // list. Cart lines and combo-box selections are keyed by style code (never
 // by array index) precisely so this always finds the right product even if
@@ -2583,9 +2578,9 @@ function comboRowControlsHtml(s){
   if(existing){
     const boxes = Math.round((existing.qty / s.casepack) * 100) / 100;
     return `${badge}<div class="combo-stepper">
-      <button type="button" data-dec-style="${escapeAttr(s.style)}">−</button>
+      <button type="button" data-dec-style="${escapeHtml(s.style)}">−</button>
       <span class="combo-stepper-qty">${boxes}</span>
-      <button type="button" data-inc-style="${escapeAttr(s.style)}">+</button>
+      <button type="button" data-inc-style="${escapeHtml(s.style)}">+</button>
     </div>`;
   }
 
@@ -2597,7 +2592,7 @@ function comboRowControlsHtml(s){
   // those rows fall back to the plain tap-the-row-to-open-panel flow.
   const canQuickAdd = marginResult.status === 'ok' && (available === null || available >= s.casepack);
   if(canQuickAdd){
-    return `${badge}<button type="button" class="combo-add-btn" data-add-style="${escapeAttr(s.style)}">ADD</button>`;
+    return `${badge}<button type="button" class="combo-add-btn" data-add-style="${escapeHtml(s.style)}">ADD</button>`;
   }
   return `${badge}<span class="combo-select-hint">Select ›</span>`;
 }
@@ -2608,10 +2603,10 @@ function renderComboResults(){
   if(matches.length===0){
     els.comboResults.innerHTML = '<div class="combo-empty">No products match your search.</div>';
   } else {
-    els.comboResults.innerHTML = matches.map(s => `<div class="combo-item" data-style="${escapeAttr(s.style)}">
+    els.comboResults.innerHTML = matches.map(s => `<div class="combo-item" data-style="${escapeHtml(s.style)}">
         <div class="ci-l">
-          <div class="ci-style">${s.style}</div>
-          <div class="ci-desc">${s.desc}</div>
+          <div class="ci-style">${escapeHtml(s.style)}</div>
+          <div class="ci-desc">${escapeHtml(s.desc)}</div>
         </div>
         <div class="ci-r">
           ${comboRowPriceHtml(s)}
@@ -2817,7 +2812,7 @@ function renderImgScanResults(matched, unmatched){
       <span>${qty} pcs</span>
     </div>`).join('');
   const unmatchedHtml = unmatched.map(it => `
-    <div class="imgscan-row-item bad" data-imgscan-unmatched="${escapeAttr(it.product)}">
+    <div class="imgscan-row-item bad" data-imgscan-unmatched="${escapeHtml(it.product)}">
       <span>⚠ "${escapeHtml(it.product)}" — SKU Not Found</span>
       <span class="imgscan-search-link">Search &amp; add →</span>
     </div>`).join('');
@@ -2935,11 +2930,11 @@ els.customerName.addEventListener('input', ()=>{
     // Show what the user actually typed (qRaw is lowercased/space-collapsed
     // for matching only) — the order itself always uses the real field
     // value, this message just shouldn't visually mangle their input.
-    const typedName = escapeAttr(els.customerName.value.trim());
+    const typedName = escapeHtml(els.customerName.value.trim());
     els.buyerResults.innerHTML = '<div class="combo-empty new-customer">✓ <b>"'+typedName+'"</b> will be included as a new customer for this order — add it to your Customer Master sheet so it appears in search next time.</div>';
   } else {
     els.buyerResults.innerHTML = matches.map(b =>
-      `<div class="combo-item" data-buyer="${b.replace(/"/g,'&quot;')}"><div class="ci-l"><div class="ci-style">${b}</div></div></div>`
+      `<div class="combo-item" data-buyer="${escapeHtml(b)}"><div class="ci-l"><div class="ci-style">${escapeHtml(b)}</div></div></div>`
     ).join('');
   }
   els.buyerResults.hidden = false;
@@ -3028,8 +3023,8 @@ function openAddPanel(style){
 
   els.addPanel.hidden = false;
   els.addPanel.innerHTML = `
-    <div class="ap-title">${s.style} — ${s.desc}</div>
-    <div class="ap-desc">MRP ₹${s.mrp} · Case pack ${s.casepack} · ${s.brand ? 'Brand '+s.brand : 'Category '+(s.category||'—')}</div>
+    <div class="ap-title">${escapeHtml(s.style)} — ${escapeHtml(s.desc)}</div>
+    <div class="ap-desc">MRP ₹${s.mrp} · Case pack ${s.casepack} · ${s.brand ? 'Brand '+escapeHtml(s.brand) : 'Category '+escapeHtml(s.category||'—')}</div>
     <div class="field" style="margin-bottom:6px;">
       <label># Boxes <span class="opt">1 box = ${s.casepack} pcs</span></label>
       <input type="number" id="apBoxes" min="0" step="1" value="${Math.round((defaultQty / s.casepack) * 100) / 100}">
@@ -3108,7 +3103,7 @@ function openAddPanel(style){
     const warehouses = warehousesForCustomer(els.customerName.value);
     const scoped = !!warehouses;
     const available = scopedAvailableStock(s.style, els.customerName.value);
-    const locSuffix = scoped ? ` (${BUYER_REGION_CHANNEL[els.customerName.value]}: ${warehouses.map(w=>WAREHOUSE_LABELS[w]).join(' + ')})` : '';
+    const locSuffix = scoped ? ` (${escapeHtml(BUYER_REGION_CHANNEL[els.customerName.value])}: ${warehouses.map(w=>WAREHOUSE_LABELS[w]).join(' + ')})` : '';
 
     let cls, status, extra = '';
     if(available<=0){
@@ -3268,10 +3263,10 @@ function renderCart(){
 
 function cartItemHtml(l){
   const badgeClass = l.validation==='Accepted' ? 'ok' : 'bad';
-  const styleAttr = escapeAttr(l.style);
+  const styleAttr = escapeHtml(l.style);
   return `<div class="cart-item ${l.validation==='Accepted'?'accepted':'rejected'}" data-style="${styleAttr}">
     <div style="flex:1; min-width:0;">
-      <div class="ci-name">${l.sku.style} — ${l.sku.desc}</div>
+      <div class="ci-name">${escapeHtml(l.sku.style)} — ${escapeHtml(l.sku.desc)}</div>
       <div class="ci-sub">₹${l.sku.mrp} MRP · Case ${l.sku.casepack}</div>
       <div class="ci-fields">
         <div>
@@ -3882,11 +3877,16 @@ const historyView = {
   calYearMonth:null, calSelectedDate:null, report:'total'
 };
 
-// Full HTML-text escaping (unlike escapeAttr above, which only covers the
-// & and " needed inside a quoted attribute) — used here because customer
-// names and product descriptions are free text that could contain < or >,
-// and this is the one place in the app that renders them as HTML content
-// rather than as an attribute value or a plain input's .value.
+// The one escaping function for every place this file drops free text
+// (product descriptions/names/EANs, customer names, buyer-search matches)
+// into an HTML template literal — whether as attribute-value content
+// (data-style="...") or as element text content (<div>...</div>). Escaping
+// &<>"' is safe in both contexts, so one function covers both rather than
+// needing a separate narrower "attribute-only" escaper. That text ultimately
+// comes from a Google Sheet non-engineers edit (or, for a freshly-typed
+// customer name, straight from the input field), so it must never be
+// trusted as HTML — a product description containing `<img src=x
+// onerror=...>` would otherwise execute for every rep who searches for it.
 function escapeHtml(str){
   return String(str)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
