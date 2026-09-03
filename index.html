@@ -2316,6 +2316,24 @@ function availableStockFor(style){
   return inv ? inv.remaining : null;
 }
 
+// Warehouse-scoped Live Inventory available quantity for a SKU + customer —
+// shared by the Add-to-Order panel's advisory box AND the hard block on the
+// Add to Order button itself (see openAddPanel below). Scoped to whichever
+// warehouses the customer's Sales Channel is actually fulfilled from (see
+// CHANNEL_WAREHOUSES/warehousesForCustomer), same reasoning as the Inventory
+// overlay table — a West GT buyer shouldn't see GGN-only stock counted as
+// available to them when GGN can't actually ship there. Falls back to
+// aggregate ("all locations") for a channel with no defined rule, or no
+// customer selected yet. Returns null when there's no Live Inventory data
+// for this SKU at all (unsynced/unmatched SKU, or inventory not loaded) —
+// callers treat that as "unknown", not "zero", and don't block on it.
+function scopedAvailableStock(style, customerLabel){
+  const inv = LIVE_INVENTORY[style];
+  if(!inv) return null;
+  const warehouses = warehousesForCustomer(customerLabel);
+  return warehouses ? warehouses.reduce((sum,w)=>sum+(inv[w]||0),0) : inv.all;
+}
+
 function evaluateLine(sku, qty, unitPrice, discount, isSample){
   qty = parseFloat(qty) || 0;
   unitPrice = parseFloat(unitPrice) || 0;
@@ -2798,11 +2816,12 @@ function openAddPanel(style){
     qtyDisplay.textContent = 'Total Qty: ' + qtyInput.value + ' pcs';
   }
 
-  // Live Inventory Check — advisory only (does not block Add to Order).
-  // Looks up LIVE_INVENTORY (keyed by style code, independent of Sales
-  // Channel since the same warehouse stock backs a SKU regardless of which
-  // catalog it's sold through) and compares against the selected Fulfilment
-  // Location from Step 2 and the quantity currently entered here.
+  // Live Inventory Check — the Add to Order button below hard-blocks on
+  // this exact figure (see scopedAvailableStock), so what's shown here is
+  // never just advisory: if it says Not Available/Partially Available, the
+  // add WILL be refused. Looks up LIVE_INVENTORY (keyed by style code,
+  // independent of Sales Channel since the same warehouse stock backs a
+  // SKU regardless of which catalog it's sold through).
   function renderInvCheck(qty){
     if(!invBox) return;
     const hasInventoryData = Object.keys(LIVE_INVENTORY).length > 0;
@@ -2824,28 +2843,18 @@ function openAddPanel(style){
     // for a channel with no defined rule, or no customer selected yet.
     const warehouses = warehousesForCustomer(els.customerName.value);
     const scoped = !!warehouses;
-    const available = scoped ? warehouses.reduce((sum,w)=>sum+(inv[w]||0),0) : inv.all;
+    const available = scopedAvailableStock(s.style, els.customerName.value);
     const locSuffix = scoped ? ` (${BUYER_REGION_CHANNEL[els.customerName.value]}: ${warehouses.map(w=>WAREHOUSE_LABELS[w]).join(' + ')})` : '';
 
     let cls, status, extra = '';
     if(available<=0){
-      cls='bad'; status='Not Available';
-      extra = `<div class="inv-suggestion">⚠ Out of stock${locSuffix} — select another SKU.</div>`;
+      cls='bad'; status='Out of Stock — Cannot Add';
+      extra = `<div class="inv-suggestion">⛔ Out of stock${locSuffix} — select another SKU.</div>`;
     } else if(qty>0 && qty>available){
-      cls='warn'; status='Partially Available';
-      extra = `<div class="inv-suggestion">⚠ Only ${available} available${locSuffix} — reduce the quantity to ${available} or fewer, or select another SKU.</div>`;
+      cls='bad'; status='Blocked — Exceeds Available Stock';
+      extra = `<div class="inv-suggestion">⛔ Only ${available} available${locSuffix} — reduce the quantity to ${available} or fewer, or select another SKU.</div>`;
     } else {
       cls='ok'; status='Available';
-    }
-
-    // When stock validation is enabled, Remaining Inventory (aggregate —
-    // see availableStockFor()) is the figure actually enforced by
-    // evaluateLine() below; surface that here too and escalate the advisory
-    // warning above into an explicit blocked state so the rep isn't
-    // surprised when the line shows up REJECTED in the cart.
-    if(STOCK_VALIDATION_ENABLED && qty>0 && qty>inv.remaining){
-      cls='bad'; status='Blocked — Exceeds Available Stock';
-      extra = `<div class="inv-suggestion">⛔ Only ${inv.remaining} remaining overall — this line will be rejected at qty ${qty}. Reduce the quantity or select another SKU.</div>`;
     }
     const staleMs = liveInventorySyncedAt ? (Date.now() - liveInventorySyncedAt) : null;
     const isStale = staleMs !== null && staleMs > INVENTORY_STALE_AFTER_HOURS*3600*1000;
@@ -2891,6 +2900,17 @@ function openAddPanel(style){
     // wiping it out just because this panel was reopened.
     if(qty<=0){ toast('Enter the number of boxes'); return; }
     if(!(price>0) && !isSample){ toast('Enter a unit price greater than 0'); return; }
+    // Hard stock block: an order can't add more than Live Inventory
+    // actually has at this customer's warehouses (see scopedAvailableStock/
+    // renderInvCheck above, which shows this exact same figure before the
+    // rep even gets here). Skipped when there's no inventory data for this
+    // SKU at all (available===null) — an unsynced/unmatched SKU is never
+    // blocked purely for lack of data, same reasoning as availableStockFor.
+    const available = scopedAvailableStock(s.style, els.customerName.value);
+    if(available !== null){
+      if(available <= 0){ toast(`⛔ ${s.style} is out of stock — can't add to the order`); return; }
+      if(qty > available){ toast(`⛔ Only ${available} available for this customer — reduce the quantity`); return; }
+    }
     if(existing){ existing.qty = qty; existing.unitPrice = price; existing.discount = defaultDiscount; }
     else { state.cart.push({style: s.style, qty, unitPrice: price, discount: defaultDiscount, isSample}); }
     closeAddPanel();
