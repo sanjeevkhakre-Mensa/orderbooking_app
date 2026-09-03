@@ -24,14 +24,6 @@
     --blue-dark:#0090c4;
     --lime:#C9E71D;
     --ink:#12384A;
-    /* Same value as --ink today, but this one NEVER changes in dark mode —
-       for the handful of surfaces (mini-summary, toast, the active report
-       tab, the install banner button) that are deliberately styled as a
-       "dark chip" regardless of the page's own light/dark theme. --ink
-       itself DOES flip (see the dark-mode media query at the end of this
-       stylesheet), since everywhere else it's just "heading text color on
-       whatever the card background is." */
-    --ink-fixed:#12384A;
     --whatsapp:#25D366;
     --whatsapp-dark:#1ea952;
     --bg:#eef2f5;
@@ -205,7 +197,7 @@
     border:1.5px solid var(--border); background:#fff; border-radius:20px;
     padding:7px 12px; font-size:11.5px; font-weight:700; color:var(--muted); cursor:pointer;
   }
-  .report-tab.active{ background:var(--ink-fixed); border-color:var(--ink-fixed); color:#fff; }
+  .report-tab.active{ background:var(--ink); border-color:var(--ink); color:#fff; }
   .report-card{ background:#fff; border:1.5px solid var(--border); border-radius:10px; padding:12px; }
   .report-big-number{ text-align:center; padding:10px 0; }
   .report-big-number .rbn-value{ font-size:28px; font-weight:800; color:var(--ink); }
@@ -612,7 +604,7 @@
   /* ---------------- Sticky mini summary (step 2) ---------------- */
   .mini-summary{
     position:sticky; bottom:80px; margin-top:6px;
-    background:var(--ink-fixed); color:#fff; border-radius:10px;
+    background:var(--ink); color:#fff; border-radius:10px;
     padding:9px 14px; font-size:12px; font-weight:700;
     display:flex; justify-content:space-between; gap:10px;
     box-shadow:var(--shadow);
@@ -696,18 +688,18 @@
      else in the app for a non-technical user. */
   .install-banner{
     display:flex; align-items:center; gap:10px;
-    background:var(--lime); color:var(--ink-fixed); padding:10px 14px;
+    background:var(--lime); color:var(--ink); padding:10px 14px;
   }
   .install-banner-text{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
   .install-banner-text strong{ font-size:13px; font-weight:800; }
   .install-banner-text span{ font-size:11px; font-weight:600; opacity:.85; line-height:1.3; }
   .install-banner-btn{
-    background:var(--ink-fixed); color:#fff; border:none; border-radius:8px;
+    background:var(--ink); color:#fff; border:none; border-radius:8px;
     padding:9px 14px; font-size:12.5px; font-weight:800; cursor:pointer; flex-shrink:0;
   }
   .install-banner-btn:hover{ background:#0a2531; }
   .install-banner-close{
-    background:none; border:none; color:var(--ink-fixed); opacity:.55; font-size:15px;
+    background:none; border:none; color:var(--ink); opacity:.55; font-size:15px;
     cursor:pointer; flex-shrink:0; padding:4px;
   }
   .install-banner-close:hover{ opacity:.9; }
@@ -715,7 +707,7 @@
   a.copy-link, .toast{ }
   .toast{
     position:fixed; top:14px; left:50%; transform:translateX(-50%);
-    background:var(--ink-fixed); color:#fff; padding:10px 16px; border-radius:8px;
+    background:var(--ink); color:#fff; padding:10px 16px; border-radius:8px;
     font-size:12.5px; font-weight:700; z-index:50; box-shadow:var(--shadow);
     opacity:0; pointer-events:none; transition:opacity .2s ease;
   }
@@ -749,71 +741,6 @@
   }
   @media print{
     .combo-results, .mini-summary{ display:none !important; }
-  }
-
-  /* ---------------- Dark mode ----------------
-     Redefines the same custom properties everything already reads through
-     (--bg/--card/--border/--ink/--muted/the status-color pairs), which
-     alone re-themes the large majority of the app. The rest of this block
-     is one-by-one overrides for the handful of surfaces that were
-     hardcoded to a literal hex instead of a variable (plain #fff cards/
-     inputs, a few pale hover-tint fills) — they never had a reason to vary
-     before dark mode existed, so nobody had wired them through a variable.
-     --ink-fixed (mini-summary, toast, the active report tab, the install
-     banner) is deliberately EXCLUDED here — see its definition in :root —
-     those are "dark chip" surfaces regardless of the page's own theme, not
-     text that should follow it. */
-  @media (prefers-color-scheme: dark){
-    :root{
-      --blue:#3ec2ff; --blue-dark:#0090c4;
-      --ink:#e9f2f6;
-      --bg:#101a20; --card:#17242c; --border:#2a3941;
-      --muted:#93a7b0;
-      --green-bg:#173521; --green-text:#7be05c;
-      --red-bg:#3a1e1d;   --red-text:#ff8a7e;
-      --amber-bg:#3a2c10; --amber-text:#ffbf5c;
-      --gray-bg:#232f37;  --gray-text:#a7b8c0;
-    }
-    body{ color:var(--ink); }
-    #orderNo{ background:#1b2830 !important; }
-
-    /* Order History / Order Summary overlay */
-    .history-close, .history-list-item, .history-pager button, .history-detail,
-    .history-tab, .summary-month-total, .cal-card, .cal-header button,
-    .report-tab, .report-card, .inv-section-toggle{ background:var(--card); }
-    .history-detail .hd-line{ color:#a9bac1; }
-    .history-edit-link:hover{ background:#1c2b33; }
-    .cal-cell{ background:#1c2830; }
-    .review-recap{ color:#c3d0d5; }
-
-    /* Order Setup fields / Sales Channel toggle */
-    .field input, .field select, .field textarea{ background:#1b2830; color:var(--ink); }
-    .field input:focus, .field select:focus, .field textarea:focus{ background:var(--card); }
-    .channel-toggle-btn{ background:#1b2830; }
-
-    /* Search & Add Products */
-    .combo-results{ background:var(--card); }
-    .combo-item{ border-bottom-color:#223039; }
-    .combo-item:hover, .combo-item:active{ background:#1c2b33; }
-    .combo-item .ci-desc{ color:#9fb0b8; }
-
-    /* Add-to-Order panel */
-    .add-panel{ background:#122029; }
-    .add-panel .ap-desc{ color:#9fb0b8; }
-    .imgscan-group-label{ background:#1c2830; }
-
-    /* Buttons */
-    .btn-outline{ background:var(--card); }
-    .btn-outline:hover{ background:#1c2b33; }
-
-    /* Order Lines */
-    .cart-item.rejected{ border-color:#5c332f; background:#241715; }
-    .cart-item.accepted{ border-color:#2c4a34; background:#16221a; }
-    .ci-fields .ci-qty-value{ background:#1b2830; }
-    .ci-edit:hover{ background:#1c2b33; }
-
-    .masterdata-bar.syncing{ background:#122a36; }
-    .inv-table th{ background:#1c2830; }
   }
 </style>
 </head>
