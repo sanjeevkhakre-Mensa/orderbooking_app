@@ -454,10 +454,16 @@
   .ci-fields{ display:flex; gap:6px; margin-top:8px; }
   .ci-fields > div{ display:flex; flex-direction:column; gap:2px; flex:0 0 110px; }
   .ci-fields label{ font-size:9.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.2px; }
-  .ci-fields input{
+  /* .ci-qty-value is a read-only stand-in for what used to be an <input> —
+     same box metrics, but shaded like the app's other disabled/computed
+     fields (see #orderNo) so it reads as non-editable at a glance. Qty is
+     changed by re-selecting the product from Search & Add Products, which
+     reopens it through the Add-to-Order panel's case-pack/stock checks. */
+  .ci-fields input, .ci-fields .ci-qty-value{
     width:100%; text-align:center; padding:5px 2px; border:1.5px solid var(--border); border-radius:6px;
-    font-weight:700; font-size:16px; min-height:34px;
+    font-weight:700; font-size:16px; min-height:34px; box-sizing:border-box;
   }
+  .ci-fields .ci-qty-value{ display:flex; align-items:center; justify-content:center; background:#f4f7f9; color:var(--ink); }
   .ci-calc{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px 8px; margin-top:8px; font-size:11.5px; color:var(--muted); }
   .ci-value{ font-weight:800; font-size:12.5px; color:var(--ink); }
   .ci-badge{ font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:20px; text-transform:uppercase; letter-spacing:.2px; }
@@ -482,18 +488,6 @@
   .mini-summary span.acc{ color:#b7f0c2; }
 
   /* ---------------- Review step ---------------- */
-  .stat-tiles{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
-  .stat-tile{ border-radius:10px; padding:12px 8px; text-align:center; }
-  .stat-tile .n{ font-size:22px; font-weight:800; display:block; }
-  .stat-tile .t{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
-  .stat-tile.total{ background:#eef6fb; color:var(--blue-dark); }
-  .stat-tile.accepted{ background:var(--green-bg); color:var(--green-text); }
-  .stat-tile.rejected{ background:var(--red-bg); color:var(--red-text); }
-
-  .reject-list{ display:flex; flex-direction:column; gap:6px; margin-top:8px; }
-  .reject-row{ font-size:12px; background:var(--red-bg); color:var(--red-text); border-radius:8px; padding:8px 10px; }
-  .reject-row b{ font-weight:800; }
-
   .review-recap{ font-size:12.5px; color:#334; display:flex; flex-direction:column; gap:4px; }
   .review-recap .rr{ display:flex; justify-content:space-between; gap:8px; }
   .review-recap .rr span:first-child{ color:var(--muted); }
@@ -828,16 +822,6 @@
       </div>
 
       <div class="card">
-        <h2>Order Validation Summary</h2>
-        <div class="stat-tiles">
-          <div class="stat-tile total"><span class="n" id="rvLines">0</span><span class="t">Total Lines</span></div>
-          <div class="stat-tile accepted"><span class="n" id="rvAccepted">0</span><span class="t">Accepted</span></div>
-          <div class="stat-tile rejected"><span class="n" id="rvRejected">0</span><span class="t">Rejected</span></div>
-        </div>
-        <div id="rejectList" class="reject-list"></div>
-      </div>
-
-      <div class="card">
         <h2>Order Value Summary</h2>
         <div class="review-recap">
           <div class="rr"><span>Total Order Value (Before GST)</span><span id="rvBeforeGst">₹0.00</span></div>
@@ -1146,7 +1130,7 @@ const els = {};
  'productSearch','comboResults','btnScanBarcode','scannerOverlay','scannerClose','scannerVideo','scannerStatus','salesChannelHint',
  'imgScanRow','btnImgScan','imgScanFile','imgScanStatus','imgScanResults',
  'addPanel','cartList','cartCount','miniSummary','msLines','msAccepted','msRejected','msValue',
- 'rvLines','rvAccepted','rvRejected','rejectList','recapDetails','rvTotalValue',
+ 'recapDetails','rvTotalValue',
  'rvBeforeGst','rvGst',
  'statusLine','sheetStatus','toast','editOrderDetailsLink',
  'masterDataBar','masterDataText','btnRefreshMasterData',
@@ -2972,24 +2956,16 @@ function renderCart(){
   els.msRejected.textContent = rejected;
   els.msValue.textContent = netOrderValue.toLocaleString('en-IN', {maximumFractionDigits:0});
 
-  // The Order Validation Summary, Order Value Summary, Order Details recap
-  // and status line all live on the same page as the cart now (Products &
-  // Review were merged into a single step) — keep them in sync right here
-  // instead of in a separately-triggered render pass, so every cart/field
-  // change (add, edit, remove, sales channel, location, margins, customer
-  // name) is reflected immediately without relying on callers to remember
-  // a second render call.
-  els.rvLines.textContent = lines.length;
-  els.rvAccepted.textContent = accepted;
-  els.rvRejected.textContent = rejected;
+  // The Order Value Summary, Order Details recap and status line all live
+  // on the same page as the cart now (Products & Review were merged into a
+  // single step) — keep them in sync right here instead of in a
+  // separately-triggered render pass, so every cart/field change (add,
+  // edit, remove, sales channel, location, margins, customer name) is
+  // reflected immediately without relying on callers to remember a second
+  // render call.
   els.rvBeforeGst.textContent = fmtMoney(totalBeforeGst);
   els.rvGst.textContent = fmtMoney(totalGst);
   els.rvTotalValue.textContent = fmtMoney(netOrderValue);
-
-  const rejectedLines = lines.filter(l=>l.validation==='REJECTED');
-  els.rejectList.innerHTML = rejectedLines.length===0 ? '' : rejectedLines.map(l =>
-    `<div class="reject-row"><b>${l.sku.style}</b> — ${l.sku.desc}: ${l.reason}</div>`
-  ).join('');
 
   els.recapDetails.innerHTML = [
     ['Order Number', els.orderNo.value || '—'],
@@ -3020,7 +2996,7 @@ function cartItemHtml(l){
       <div class="ci-name">${l.sku.style} — ${l.sku.desc}</div>
       <div class="ci-sub">₹${l.sku.mrp} MRP · Case ${l.sku.casepack} · ${locLabel()||'—'}</div>
       <div class="ci-fields">
-        <div><label>Qty</label><input type="number" class="mini-qty" value="${l.qty}" data-style="${styleAttr}"></div>
+        <div><label>Qty</label><div class="ci-qty-value">${l.qty}</div></div>
       </div>
       <div class="ci-calc">
         <span>Unit Price ₹${l.unitPrice}${l.isSample ? ' 🎁 Sample' : ''}</span>
@@ -3034,15 +3010,6 @@ function cartItemHtml(l){
   </div>`;
 }
 
-document.addEventListener('input', (e)=>{
-  const style = e.target.dataset.style;
-  if(!style) return;
-  const c = state.cart.find(c=>c.style===style);
-  if(!c) return;
-  if(e.target.classList.contains('mini-qty')){ c.qty = parseFloat(e.target.value)||0; }
-  else return;
-  renderCart();
-});
 document.addEventListener('click', (e)=>{
   const rm = e.target.closest('[data-remove]');
   if(rm){
