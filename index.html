@@ -321,9 +321,28 @@
   .combo-item .ci-desc{ font-size:11.5px; color:#556; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .combo-item .ci-r{ text-align:right; flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
   .combo-item .ci-mrp{ font-size:12px; font-weight:700; color:var(--ink); }
+  /* Selling price (Margin Master resolved) shown ahead of MRP — a rep
+     shouldn't have to open the panel just to see what the customer will
+     actually be charged. MRP demotes to a struck-through reference price
+     underneath it, e-commerce-app style. Only shown when there IS a
+     resolved price (marginResult.status 'ok'/'sample') — see
+     comboRowPriceHtml(); a row with no/duplicate margin still can't show
+     one, same reasoning as it not getting the one-tap ADD button. */
+  .ci-price{ font-size:13.5px; font-weight:800; color:var(--ink); }
+  .ci-price.sample{ color:var(--green-text); }
+  .ci-mrp-strike{ font-size:10px; color:var(--muted); text-decoration:line-through; }
   .stock-badge{ font-size:9.5px; font-weight:700; padding:2px 6px; border-radius:20px; display:inline-block; }
   .stock-badge.in{ background:var(--green-bg); color:var(--green-text); }
   .stock-badge.out{ background:var(--gray-bg); color:var(--gray-text); }
+  /* Shown on rows that fall back to the Add-to-Order panel (no ADD button)
+     so every row carries SOME tappable-looking affordance in ci-r instead
+     of the ones without a margin resolved looking inert/dead next to the
+     ones that got a blue ADD pill — see comboRowControlsHtml(). Outlined,
+     not filled, since it opens a panel rather than adding anything. */
+  .combo-select-hint{
+    font-size:10.5px; font-weight:700; color:var(--muted); letter-spacing:.2px;
+    padding:5px 10px; border:1.5px solid var(--border); border-radius:16px;
+  }
   /* Amazon/Flipkart-style one-tap add on the search result row itself —
      see comboRowControlsHtml(). ADD skips the Add-to-Order panel for the
      common case; once a SKU is in the cart the row shows a qty stepper
@@ -495,11 +514,15 @@
   /* Sits at the top of each cart item (align-items:flex-start on .cart-item
      puts this row at the top, not centered against the whole card) — Edit
      reopens the Add-to-Order panel for this line (see openAddPanel's
-     `existing` handling) now that Qty in Order Lines is read-only. */
+     `existing` handling) now that Qty in Order Lines is read-only.
+     44x44 meets Apple/Google's minimum touch-target guidance — reps are
+     often tapping these one-handed in a shop, in a hurry, and the previous
+     28px circles were an easy mis-tap (Edit vs. Remove sit right next to
+     each other). */
   .ci-actions{ display:flex; gap:4px; flex-shrink:0; }
   .ci-edit, .ci-remove{
-    background:none; border:none; font-size:15px; cursor:pointer;
-    width:28px; height:28px; border-radius:50%; flex-shrink:0;
+    background:none; border:none; font-size:19px; cursor:pointer;
+    width:44px; height:44px; border-radius:50%; flex-shrink:0;
   }
   .ci-edit{ color:var(--blue-dark); }
   .ci-edit:hover{ background:#eef6fb; }
@@ -2410,10 +2433,32 @@ function searchProductMatches(){
     .slice(0,8);
 }
 
+// The price a rep actually needs before adding a line — not MRP, which is
+// just the printed sticker price. Shown ahead of MRP (demoted to a
+// struck-through reference line) whenever Margin Master resolves cleanly
+// enough to know it (status 'ok' or the flat-₹1 'sample' case); falls back
+// to MRP alone when it doesn't (no/duplicate margin on file) — there's
+// genuinely no selling price to show yet in that case, same reasoning as
+// those rows not getting the one-tap ADD button below.
+function comboRowPriceHtml(s){
+  const buyerCode = BUYER_CODES[els.customerName.value];
+  const marginResult = marginFromMasterFor(buyerCode, s.style);
+  if(marginResult.status === 'ok'){
+    const price = priceFromMarginPct(s, marginResult.pct);
+    return `<div class="ci-price">₹${price.toFixed(2)}</div><div class="ci-mrp-strike">MRP ₹${s.mrp}</div>`;
+  }
+  if(marginResult.status === 'sample'){
+    return `<div class="ci-price sample">🎁 ₹1 Sample</div><div class="ci-mrp-strike">MRP ₹${s.mrp}</div>`;
+  }
+  return `<div class="ci-mrp">₹${s.mrp} MRP</div>`;
+}
+
 // Amazon/Flipkart-style controls for one search result row: a one-tap ADD
-// button for the common case, a qty stepper once it's in the cart, or
-// nothing extra when the row needs the full Add-to-Order panel (tapping
-// the row itself still opens that, same as before this feature existed).
+// button for the common case, a qty stepper once it's in the cart, or a
+// "Select ›" hint when the row needs the full Add-to-Order panel (tapping
+// the row itself still opens that, same as before this feature existed) —
+// every row gets SOME tappable-looking affordance in ci-r, not just the
+// ones that qualify for one-tap ADD.
 function comboRowControlsHtml(s){
   const existing = state.cart.find(c=>c.style===s.style);
   const buyerCode = BUYER_CODES[els.customerName.value];
@@ -2445,7 +2490,7 @@ function comboRowControlsHtml(s){
   if(canQuickAdd){
     return `${badge}<button type="button" class="combo-add-btn" data-add-style="${escapeAttr(s.style)}">ADD</button>`;
   }
-  return badge;
+  return `${badge}<span class="combo-select-hint">Select ›</span>`;
 }
 
 function renderComboResults(){
@@ -2460,7 +2505,7 @@ function renderComboResults(){
           <div class="ci-desc">${s.desc}</div>
         </div>
         <div class="ci-r">
-          <div class="ci-mrp">₹${s.mrp}</div>
+          ${comboRowPriceHtml(s)}
           ${comboRowControlsHtml(s)}
         </div>
       </div>`).join('');
