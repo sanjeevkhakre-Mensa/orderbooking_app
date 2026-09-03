@@ -2803,6 +2803,7 @@ function openAddPanel(style){
   const note = document.getElementById('apNote');
   const preview = document.getElementById('apPreview');
   const invBox = document.getElementById('apInvCheck');
+  const addBtn = document.getElementById('apAdd');
 
   // Total Qty (pcs) is read-only, driven entirely by # Boxes — a rep can no
   // longer type or step through pcs directly. qtyInput stays a hidden field
@@ -2823,6 +2824,11 @@ function openAddPanel(style){
   // independent of Sales Channel since the same warehouse stock backs a
   // SKU regardless of which catalog it's sold through).
   function renderInvCheck(qty){
+    // Out-of-stock disables the button outright (see below) — reset to
+    // enabled at the top of every render so a SKU/customer combo that DOES
+    // have stock is never left disabled from a previous render (e.g. the
+    // panel was opened for a different, out-of-stock product last time).
+    if(addBtn) addBtn.disabled = false;
     if(!invBox) return;
     const hasInventoryData = Object.keys(LIVE_INVENTORY).length > 0;
     if(!hasInventoryData){
@@ -2850,6 +2856,11 @@ function openAddPanel(style){
     if(available<=0){
       cls='bad'; status='Out of Stock — Cannot Add';
       extra = `<div class="inv-suggestion">⛔ Out of stock${locSuffix} — select another SKU.</div>`;
+      // Zero stock at this customer's warehouses — no quantity could ever
+      // be valid, so disable the button entirely rather than waiting for a
+      // click to reject it (unlike "exceeds available" below, which stays
+      // clickable since lowering the quantity can still make it valid).
+      if(addBtn) addBtn.disabled = true;
     } else if(qty>0 && qty>available){
       cls='bad'; status='Blocked — Exceeds Available Stock';
       extra = `<div class="inv-suggestion">⛔ Only ${available} available${locSuffix} — reduce the quantity to ${available} or fewer, or select another SKU.</div>`;
