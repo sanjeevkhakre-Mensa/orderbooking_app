@@ -1102,6 +1102,27 @@ const MASTER_DATA_URLS = {
 // the case where the daily sync silently stopped running for a day or two.
 const INVENTORY_STALE_AFTER_HOURS = 30;
 
+// Stock Status shown in Search & Add Products and the Add-to-Order panel
+// has 3 tiers: Out of Stock (0 available), Low Stock (some available, but
+// less than this many CASES — not a flat unit count, since a "5 units low"
+// warning means something very different for a 6-pack than a 200-pack), In
+// Stock (everything else). Purely a display/warning threshold — it never
+// blocks adding; only 0 available (or requesting more than what's
+// available) does that. See stockStatusFor().
+const LOW_STOCK_THRESHOLD_CASES = 2;
+
+// Shared by the Search & Add Products row badge (comboRowControlsHtml) and
+// the Add-to-Order panel's Live Inventory Check (renderInvCheck) so both
+// surfaces speak the same 3-tier language for the same SKU. `available` is
+// null when there's no Live Inventory data for this SKU at all — callers
+// treat that as "unknown", not "zero" (see scopedAvailableStock).
+function stockStatusFor(available, casepack){
+  if(available === null) return null;
+  if(available <= 0) return { tier:'out', label:'Out of Stock' };
+  if(available < LOW_STOCK_THRESHOLD_CASES * casepack) return { tier:'low', label:'Low Stock' };
+  return { tier:'in', label:'In Stock' };
+}
+
 // A manual tap on the "Refresh" button always re-fetches. Otherwise, once
 // all three tabs have synced successfully, the app won't hit the sheet
 // again for this many minutes — switching steps or reopening the app
@@ -2614,10 +2635,19 @@ function comboRowControlsHtml(s){
   const marginResult = marginFromMasterFor(buyerCode, s.style);
   const available = scopedAvailableStock(s.style, els.customerName.value);
 
+  // Available Inventory Qty + Stock Status shown together, right on the
+  // search result row, so a rep sees stock before they even tap — always
+  // shown (not just when there's a problem) whenever there IS Live
+  // Inventory data for this SKU; stays blank when there's none (unknown
+  // stock, e.g. an unsynced/unmatched SKU), same as everywhere else this
+  // app treats "no data" as distinct from "zero".
   let badge = '';
-  if(available !== null){
-    if(available <= 0) badge = `<span class="stock-badge bad">Out of Stock</span>`;
-    else if(available < s.casepack) badge = `<span class="stock-badge warn">Only ${available} left</span>`;
+  const stock = stockStatusFor(available, s.casepack);
+  if(stock){
+    const cls = stock.tier === 'out' ? 'bad' : stock.tier === 'low' ? 'warn' : 'in';
+    const icon = stock.tier === 'out' ? '⛔' : stock.tier === 'low' ? '⚠' : '✓';
+    const qtySuffix = stock.tier === 'out' ? '' : ` · ${available}`;
+    badge = `<span class="stock-badge ${cls}">${icon} ${stock.label}${qtySuffix}</span>`;
   }
 
   if(existing){
@@ -3162,8 +3192,14 @@ function openAddPanel(style){
     } else if(qty>0 && qty>available){
       cls='bad'; status='Blocked — Exceeds Available Stock';
       extra = `<div class="inv-suggestion">⛔ Only ${available} available${locSuffix} — reduce the quantity to ${available} or fewer, or select another SKU.</div>`;
+    } else if(stockStatusFor(available, s.casepack).tier === 'low'){
+      // Below the Low Stock threshold, but the requested qty still fits —
+      // a warning, not a block (same distinction as "exceeds available"
+      // above being blocking while this isn't).
+      cls='warn'; status='Low Stock';
+      extra = `<div class="inv-suggestion">⚠ Only ${available} left${locSuffix} — order what you need before it runs out.</div>`;
     } else {
-      cls='ok'; status='Available';
+      cls='ok'; status='In Stock';
     }
     const staleMs = liveInventorySyncedAt ? (Date.now() - liveInventorySyncedAt) : null;
     const isStale = staleMs !== null && staleMs > INVENTORY_STALE_AFTER_HOURS*3600*1000;
