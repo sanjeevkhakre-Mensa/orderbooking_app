@@ -302,6 +302,35 @@
     box-shadow:0 0 0 3px rgba(0,174,239,0.12);
   }
   .field-hint{ font-size:11px; color:var(--muted); margin-top:1px; }
+
+  /* Present but invisible — for the real <select> a segmented toggle
+     drives (see #channelToggle above it in markup). Deliberately NOT
+     [hidden]: validateRequiredFields() skips any [hidden] ancestor, which
+     would stop this required field from ever being validated. !important
+     throughout because `.field select` (a class+type selector) otherwise
+     outranks this plain class and would win back the width/border/padding
+     this is specifically trying to strip. */
+  .visually-hidden{
+    position:absolute !important; width:1px !important; height:1px !important;
+    padding:0 !important; margin:-1px !important; min-height:0 !important;
+    overflow:hidden !important; clip:rect(0,0,0,0) !important;
+    white-space:nowrap !important; border:0 !important;
+  }
+
+  /* Sales Channel toggle — only 2 real options, so a segmented control is
+     faster to tap than opening a native picker for them. See
+     syncChannelToggleUI() for how this stays in sync with the hidden
+     <select> it drives (lock/unlock, programmatic value changes, etc.). */
+  .channel-toggle{ display:flex; border:1.5px solid var(--border); border-radius:8px; overflow:hidden; }
+  .channel-toggle-btn{
+    flex:1; padding:11px 8px; background:#fbfcfd; border:none; cursor:pointer;
+    font-size:13px; font-weight:700; color:var(--muted); font-family:inherit;
+    transition:background .15s, color .15s;
+  }
+  .channel-toggle-btn + .channel-toggle-btn{ border-left:1.5px solid var(--border); }
+  .channel-toggle-btn.active{ background:var(--blue); color:#fff; }
+  .channel-toggle-btn:disabled{ cursor:not-allowed; opacity:.7; }
+
   .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:16px 12px; align-items:start; margin-bottom:12px; }
   .grid2 .field{ margin-bottom:0; }
   .grid2:last-child{ margin-bottom:0; }
@@ -343,7 +372,13 @@
   .ci-mrp-strike{ font-size:10px; color:var(--muted); text-decoration:line-through; }
   .stock-badge{ font-size:9.5px; font-weight:700; padding:2px 6px; border-radius:20px; display:inline-block; }
   .stock-badge.in{ background:var(--green-bg); color:var(--green-text); }
-  .stock-badge.out{ background:var(--gray-bg); color:var(--gray-text); }
+  /* Two different severities, not one flat gray "out" — zero stock (can't
+     sell at all) reads as urgent/red, same as .inv-check.bad elsewhere;
+     short stock (can still sell fewer) reads as a lighter amber warning,
+     same as .inv-check.warn — see comboRowControlsHtml for which is used
+     when. */
+  .stock-badge.bad{ background:var(--red-bg); color:var(--red-text); }
+  .stock-badge.warn{ background:var(--amber-bg); color:var(--amber-text); }
   /* Shown on rows that fall back to the Add-to-Order panel (no ADD button)
      so every row carries SOME tappable-looking affordance in ci-r instead
      of the ones without a margin resolved looking inert/dead next to the
@@ -479,7 +514,17 @@
   .btn-outline{ background:#fff; border:1.5px solid var(--border); color:var(--ink); }
   .btn-outline:hover{ background:#f6f8f9; }
   .btn-ghost{ background:transparent; color:var(--muted); font-weight:600; }
-  .btn-whatsapp{ background:var(--whatsapp); color:#fff; font-size:15px; padding:14px 16px; }
+  /* The one primary action on the page — needs to visually outrank every
+     other green on it (the "Master data: synced" banner, ACCEPTED badges,
+     READY TO SUBMIT status line all reuse the same pastel --green-bg/
+     --green-text success language, which is deliberate/consistent — this
+     button uses WhatsApp's own brand green instead, plus a matching glow
+     no flat status banner has, so it reads as "the button to press," not
+     just one more green thing on the page). */
+  .btn-whatsapp{
+    background:var(--whatsapp); color:#fff; font-size:15px; font-weight:800;
+    padding:14px 16px; box-shadow:0 4px 14px rgba(37,211,102,0.4);
+  }
   .btn-whatsapp:hover{ background:var(--whatsapp-dark); }
   .btn:disabled{ opacity:.5; cursor:not-allowed; }
   .btn-row{ display:flex; gap:8px; }
@@ -819,7 +864,22 @@
         </div>
         <div class="field">
           <label>Sales Channel</label>
-          <select id="salesChannel" required>
+          <!-- Only 2 real options, so a segmented toggle is faster to tap
+               than opening a native picker — but everything the rest of
+               the app relies on (required-field validation, the lock/
+               unlock-on-buyer-select flow, the 'change' listener that
+               clears the cart on a channel switch) all read/write the
+               <select> below directly, so it stays in the DOM (visually
+               hidden, not [hidden] — validateRequiredFields() explicitly
+               skips [hidden] fields, which would silently stop validating
+               this one) and the toggle buttons just drive its .value and
+               dispatch 'change', same as lockSalesChannelTo() already
+               does programmatically. See syncChannelToggleUI(). -->
+          <div class="channel-toggle" id="channelToggle">
+            <button type="button" class="channel-toggle-btn" data-channel="General Trade">General Trade</button>
+            <button type="button" class="channel-toggle-btn" data-channel="Supplement">Supplement</button>
+          </div>
+          <select id="salesChannel" required class="visually-hidden">
             <option value="">-- Select --</option>
             <option>General Trade</option>
             <option>Supplement</option>
@@ -2225,6 +2285,27 @@ els.salesChannel.addEventListener('change', ()=>{
   renderCart();
 });
 
+// Drives the visible segmented toggle from the real (visually-hidden)
+// <select> above — every place in this file that sets els.salesChannel's
+// value or disabled state already either dispatches 'change' (caught
+// above) or is followed by a renderCart() call, and syncChannelToggleUI()
+// runs at the top of renderCart() too, so this stays correct without
+// having to patch every one of those call sites individually.
+function syncChannelToggleUI(){
+  const value = els.salesChannel.value;
+  const disabled = els.salesChannel.disabled;
+  document.querySelectorAll('.channel-toggle-btn').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.channel === value);
+    btn.disabled = disabled;
+  });
+}
+document.querySelectorAll('.channel-toggle-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    els.salesChannel.value = btn.dataset.channel;
+    els.salesChannel.dispatchEvent(new Event('change'));
+  });
+});
+
 function getNextOrderNo(){
   const today = new Date();
   const yy = today.getFullYear();
@@ -2495,8 +2576,8 @@ function comboRowControlsHtml(s){
 
   let badge = '';
   if(available !== null){
-    if(available <= 0) badge = `<span class="stock-badge out">Out of Stock</span>`;
-    else if(available < s.casepack) badge = `<span class="stock-badge out">Only ${available} left</span>`;
+    if(available <= 0) badge = `<span class="stock-badge bad">Out of Stock</span>`;
+    else if(available < s.casepack) badge = `<span class="stock-badge warn">Only ${available} left</span>`;
   }
 
   if(existing){
@@ -3126,6 +3207,7 @@ function computeCartLines(){
 }
 
 function renderCart(){
+  syncChannelToggleUI();
   const lines = computeCartLines();
   els.cartCount.textContent = lines.length;
 
