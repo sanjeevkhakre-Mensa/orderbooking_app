@@ -682,7 +682,7 @@
         <div class="inv-table-wrap">
           <table class="inv-table">
             <thead>
-              <tr><th>SKU</th><th>Product</th><th>Bhiwandi</th><th>GGN</th><th>BLR</th><th>Total Stock</th><th>Booked Qty</th><th>Available Stock</th><th>Last Updated</th></tr>
+              <tr><th>SKU</th><th>Bhiwandi</th><th>GGN</th><th>BLR</th><th>Total Stock</th><th>Booked Qty</th><th>Available Stock</th><th>Last Updated</th><th>Product</th></tr>
             </thead>
             <tbody id="invTableBody"></tbody>
           </table>
@@ -1953,7 +1953,6 @@ function renderInventoryTable(){
     const updated = rowSyncedAt ? new Date(rowSyncedAt).toLocaleString('en-IN', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : '—';
     return `<tr>
       <td>${inv.style}</td>
-      <td>${desc || '—'}</td>
       <td>${fmtNum(inv.bhiwandi)}</td>
       <td>${fmtNum(inv.ggn)}</td>
       <td>${fmtNum(inv.blr)}</td>
@@ -1961,6 +1960,7 @@ function renderInventoryTable(){
       <td>${fmtNum(inv.booked)}</td>
       <td class="${remainingCls}">${fmtNum(inv.remaining)}</td>
       <td>${updated}</td>
+      <td>${desc || '—'}</td>
     </tr>`;
   }).join('');
 }
