@@ -2994,7 +2994,7 @@ function cartItemHtml(l){
   return `<div class="cart-item ${l.validation==='Accepted'?'accepted':'rejected'}" data-style="${styleAttr}">
     <div style="flex:1; min-width:0;">
       <div class="ci-name">${l.sku.style} — ${l.sku.desc}</div>
-      <div class="ci-sub">₹${l.sku.mrp} MRP · Case ${l.sku.casepack} · ${locLabel()||'—'}</div>
+      <div class="ci-sub">₹${l.sku.mrp} MRP · Case ${l.sku.casepack}</div>
       <div class="ci-fields">
         <div><label>Qty</label><div class="ci-qty-value">${l.qty}</div></div>
       </div>
