@@ -948,13 +948,17 @@ const MASTER_DATA_URLS = {
   customers: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=226489656",           // Customer Master tab
   productsGT: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=639235062",          // Product Master — General Trade tab
   productsSupplement: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=1572320868", // Product Master — Supplement tab
-  // Switched from a "Publish to web" (/pub) link to the same /export
-  // pattern the other three tabs already use — verified 2026-08-26 that the
-  // old /pub link was serving a stale, frozen snapshot from a much older,
-  // completely different sheet layout, unrelated to whatever's actually
-  // live in the tab. Publish-to-web links don't reliably auto-update on
-  // edits; /export always reflects the sheet's current content.
-  inventory: "https://docs.google.com/spreadsheets/d/19K5gNBYtMYwPraUIIqJB06m1VwfdJq7AdGJUfgb9asA/export?format=csv&gid=212855391", // Live Inventory tab.
+  // Moved 2026-09-03 to a tab in the SAME MyFitness_Master_Data spreadsheet
+  // as customers/products/margins above (was previously a separate
+  // Live_Inventory_tab spreadsheet, id
+  // 19K5gNBYtMYwPraUIIqJB06m1VwfdJq7AdGJUfgb9asA, gid 212855391 — that tab
+  // is no longer read by this app). Columns here are Style Code/SKU
+  // Name/Category/Size/Inventory Date/Bhiwandi Qty/GGN Qty/Total Available
+  // — no BLR column and no Booked Qty/Remaining Inventory columns, so BLR
+  // always reads 0 from this source and "remaining" is just Total
+  // Available (no live booked-qty decrementing) — same as the manual
+  // Increff-paste workflow this replaces, not a new limitation.
+  inventory: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=894882779",
   // Margin_Master tab, same MyFitness_Master_Data spreadsheet as the tabs
   // above — per-Buyer-per-Product margin overrides (columns: buyer_code,
   // buyer, style_id, scan_identifier, price_type, category, Channel).
