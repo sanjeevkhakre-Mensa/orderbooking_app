@@ -63,9 +63,15 @@
   .topbar .brand .sep{ opacity:.6; margin:0 4px; font-weight:400; }
   .topbar .subbrand{ font-size:11.5px; opacity:.9; margin-top:2px; }
 
-  /* Shared round topbar-icon look for both the Order History and Order
-     Summary shortcut buttons, so the two sit together without competing
-     for attention. */
+  /* Shared round topbar-icon look for the Order History/Order Summary/
+     Inventory shortcut buttons, so all three sit together without
+     competing for attention. Each sits in an .hdr-action wrapper with a
+     text caption underneath (see markup) — three identical unlabeled
+     circles made it a guessing game for a rep on first use; the `title`
+     attribute alone only surfaces on hover, which doesn't exist on touch. */
+  .hdr-actions{ display:flex; align-items:flex-start; gap:10px; flex-shrink:0; }
+  .hdr-action{ display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .hdr-action-label{ font-size:9px; font-weight:700; color:rgba(255,255,255,0.85); letter-spacing:.2px; white-space:nowrap; }
   .history-btn, .summary-btn{
     width:40px; height:40px; border-radius:50%;
     background:rgba(255,255,255,0.2); border:2px solid rgba(255,255,255,0.4);
@@ -74,8 +80,6 @@
     flex-shrink:0;
   }
   .history-btn:hover, .summary-btn:hover{ background:rgba(255,255,255,0.3); border-color:#fff; }
-  .history-btn{ margin-right:8px; }
-  .summary-btn{ margin-left:8px; }
 
   /* ---------------- Order History overlay ----------------
      A separate modal, not the wizard's own step navigation, on purpose:
@@ -308,7 +312,13 @@
     position:absolute; left:0; right:0; top:calc(100% + 4px);
     background:#fff; border:1px solid var(--border); border-radius:10px;
     box-shadow:0 8px 24px rgba(16,24,40,0.14);
-    max-height:320px; overflow-y:auto; z-index:20;
+    /* 50vh, not a flat 320px — on a short viewport (a phone with the
+       on-screen keyboard open while typing a search) a flat max-height
+       could reach far enough down the page to visually run into the
+       sticky mini-summary bar (z-index:1, see below) further down;
+       capping to half the CURRENT viewport keeps the dropdown from ever
+       fighting other floating UI for the same screen space. */
+    max-height:min(320px, 50vh); overflow-y:auto; z-index:30;
   }
   .combo-item{
     padding:10px 12px; border-bottom:1px solid #f1f3f4; cursor:pointer;
@@ -493,7 +503,7 @@
      it across the full card width instead of sizing to a sensible input
      width. */
   .ci-fields{ display:flex; gap:6px; margin-top:8px; }
-  .ci-fields > div{ display:flex; flex-direction:column; gap:2px; flex:0 0 110px; }
+  .ci-fields > div{ display:flex; flex-direction:column; gap:2px; flex:0 0 120px; }
   .ci-fields label{ font-size:9.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.2px; }
   /* .ci-qty-value is a read-only stand-in for what used to be an <input> —
      same box metrics, but shaded like the app's other disabled/computed
@@ -505,6 +515,10 @@
     font-weight:700; font-size:16px; min-height:34px; box-sizing:border-box;
   }
   .ci-fields .ci-qty-value{ display:flex; align-items:center; justify-content:center; background:#f4f7f9; color:var(--ink); }
+  /* The "Qty (pcs)" label alone still left room to misread the number as
+     boxes (especially when casepack happens to equal the pcs count, e.g.
+     a 6-pack ordered as 1 box = "6") — this spells out the box count too. */
+  .ci-qty-boxes{ font-size:10px; color:var(--muted); text-align:center; }
   .ci-calc{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px 8px; margin-top:8px; font-size:11.5px; color:var(--muted); }
   .ci-value{ font-weight:800; font-size:12.5px; color:var(--ink); }
   .ci-badge{ font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:20px; text-transform:uppercase; letter-spacing:.2px; }
@@ -536,6 +550,9 @@
     padding:9px 14px; font-size:12px; font-weight:700;
     display:flex; justify-content:space-between; gap:10px;
     box-shadow:var(--shadow);
+    /* Explicit and low, so it never competes with .combo-results
+       (z-index:30) for the same space on a short viewport — see there. */
+    z-index:1;
   }
   .mini-summary span.rej{ color:#ffb4ae; }
   .mini-summary span.acc{ color:#b7f0c2; }
@@ -658,9 +675,20 @@
       <div class="brand">MYFITNESS <span class="sep">|</span> PRO.FITNESS</div>
       <div class="subbrand">Tanvi Fitness Pvt. Ltd. · Order Booking</div>
     </div>
-    <button class="history-btn" id="historyBtn" title="Order History">🕘</button>
-    <button class="summary-btn" id="summaryBtn" title="Order Summary">📊</button>
-    <button class="summary-btn" id="inventoryBtn" title="Inventory">📦</button>
+    <div class="hdr-actions">
+      <div class="hdr-action">
+        <button class="history-btn" id="historyBtn" title="Order History">🕘</button>
+        <span class="hdr-action-label">History</span>
+      </div>
+      <div class="hdr-action">
+        <button class="summary-btn" id="summaryBtn" title="Order Summary">📊</button>
+        <span class="hdr-action-label">Summary</span>
+      </div>
+      <div class="hdr-action">
+        <button class="summary-btn" id="inventoryBtn" title="Inventory">📦</button>
+        <span class="hdr-action-label">Inventory</span>
+      </div>
+    </div>
   </div>
 
   <!-- Order History overlay: browse previously submitted orders, either from
@@ -2809,6 +2837,11 @@ els.customerName.addEventListener('input', ()=>{
   // disabled against a customer that may no longer be the one being
   // searched for. It re-locks on its own if/when a suggestion is clicked.
   unlockSalesChannel();
+  // Keeps the status line's "what's still missing" message (see
+  // renderCart) live while typing a brand-new customer name, not just
+  // when a saved-buyer suggestion is clicked — a rep typing a new
+  // customer freehand never fires that click handler at all.
+  renderCart();
   const qRaw = normSpace(els.customerName.value);
   if(!qRaw){ els.buyerResults.hidden = true; els.buyerResults.innerHTML=''; return; }
   const tokens = qRaw.split(' ').filter(Boolean);
@@ -3126,11 +3159,22 @@ function renderCart(){
   els.rvGst.textContent = fmtMoney(totalGst);
   els.rvTotalValue.textContent = fmtMoney(netOrderValue);
 
+  // Names exactly which required field(s) are still blank, rather than
+  // always listing both — so this status line (the one proactive "what's
+  // left" signal on the page, sitting right above Submit) tells a rep
+  // precisely what to fix instead of a generic "something's missing."
+  const missingFields = [];
+  if(!els.customerName.value) missingFields.push('Customer Name');
+  if(!els.salesChannel.value) missingFields.push('Sales Channel');
+
   const statusEl = els.statusLine;
   if(lines.length===0){
-    statusEl.className='status-line empty'; statusEl.textContent='NO PRODUCTS ADDED — search and add products above';
-  } else if(!els.customerName.value || !els.salesChannel.value){
-    statusEl.className='status-line warn'; statusEl.textContent='INCOMPLETE — enter Customer Name and Sales Channel';
+    statusEl.className='status-line empty';
+    statusEl.textContent = missingFields.length
+      ? `NO PRODUCTS ADDED — search and add products above (${missingFields.join(' & ')} still needed too)`
+      : 'NO PRODUCTS ADDED — search and add products above';
+  } else if(missingFields.length){
+    statusEl.className='status-line warn'; statusEl.textContent=`INCOMPLETE — enter ${missingFields.join(' & ')}`;
   } else if(rejected>0){
     statusEl.className='status-line warn'; statusEl.textContent=`${rejected} LINE(S) REJECTED — review reasons above before sending`;
   } else {
@@ -3148,7 +3192,11 @@ function cartItemHtml(l){
       <div class="ci-name">${l.sku.style} — ${l.sku.desc}</div>
       <div class="ci-sub">₹${l.sku.mrp} MRP · Case ${l.sku.casepack}</div>
       <div class="ci-fields">
-        <div><label>Qty</label><div class="ci-qty-value">${l.qty}</div></div>
+        <div>
+          <label>Qty (pcs)</label>
+          <div class="ci-qty-value">${l.qty}</div>
+          ${l.qty % l.sku.casepack === 0 ? `<div class="ci-qty-boxes">${l.qty / l.sku.casepack} ${l.qty / l.sku.casepack === 1 ? 'box' : 'boxes'} of ${l.sku.casepack}</div>` : ''}
+        </div>
       </div>
       <div class="ci-calc">
         <span>Unit Price ₹${l.unitPrice}${l.isSample ? ' 🎁 Sample' : ''}</span>
