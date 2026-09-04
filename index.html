@@ -3532,8 +3532,8 @@ function cartItemHtml(l){
       <div class="ci-sub">₹${l.sku.mrp} MRP · Case ${l.sku.casepack}</div>
       <div class="ci-fields">
         <div>
-          <label>Qty (pcs)${l.qty % l.sku.casepack === 0 ? ` <span class="opt">${l.qty / l.sku.casepack} ${l.qty / l.sku.casepack === 1 ? 'box' : 'boxes'} of ${l.sku.casepack}</span>` : ''}</label>
-          <div class="ci-qty-value">${l.qty}</div>
+          <label>${l.qty % l.sku.casepack === 0 ? 'Qty (Boxes)' : 'Qty (pcs)'}${l.qty % l.sku.casepack === 0 ? ` <span class="opt">= ${l.qty} pcs</span>` : ''}</label>
+          <div class="ci-qty-value">${l.qty % l.sku.casepack === 0 ? l.qty / l.sku.casepack : l.qty}</div>
         </div>
       </div>
       <div class="ci-calc">
