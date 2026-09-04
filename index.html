@@ -438,6 +438,28 @@
     padding:5px 14px; font-size:11.5px; font-weight:800; cursor:pointer; letter-spacing:.2px;
   }
   .combo-add-btn:hover{ background:var(--blue-dark); }
+  /* Inline "Boxes" entry, one per quick-addable search result row — lets a
+     rep type a quantity for several rows before adding any of them, instead
+     of the old one-row-at-a-time ADD button. Nothing is added until
+     "Add Products" (below) is tapped; see bulkAddFromCombo(). */
+  .combo-qty-input{
+    width:48px; text-align:center; padding:4px 2px; border:1.5px solid var(--border);
+    border-radius:8px; font-size:12.5px; font-weight:700; color:var(--ink); background:#fff;
+  }
+  .combo-qty-input:focus{ border-color:var(--blue); outline:none; }
+  /* Sticks to the bottom of the (scrollable, max-height) results dropdown
+     rather than sitting inline after the last row, so it stays reachable
+     without scrolling past every result first. Only rendered at all when
+     renderComboResults() finds at least one batchable row. */
+  .combo-add-all-bar{
+    position:sticky; bottom:0; background:#fff; border-top:1px solid var(--border);
+    padding:8px 10px;
+  }
+  .combo-add-all-btn{
+    width:100%; background:var(--blue); color:#fff; border:none; border-radius:20px;
+    padding:9px 14px; font-size:12.5px; font-weight:800; cursor:pointer; letter-spacing:.2px;
+  }
+  .combo-add-all-btn:hover{ background:var(--blue-dark); }
   .combo-stepper{
     display:flex; align-items:center; border:1.5px solid var(--blue); border-radius:16px; overflow:hidden;
   }
@@ -2705,12 +2727,14 @@ function comboRowPriceHtml(s){
   return `<div class="ci-price-row"><span class="ci-mrp">₹${s.mrp} MRP</span></div>`;
 }
 
-// Amazon/Flipkart-style controls for one search result row: a one-tap ADD
-// button for the common case, a qty stepper once it's in the cart, or a
-// "Select ›" hint when the row needs the full Add-to-Order panel (tapping
-// the row itself still opens that, same as before this feature existed) —
-// every row gets SOME tappable-looking affordance in ci-r, not just the
-// ones that qualify for one-tap ADD.
+// Controls for one search result row: an inline "Boxes" qty box for the
+// common case (filled in across as many rows as the rep likes, then added
+// together via the "Add Products" bar — see bulkAddFromCombo()), a qty
+// stepper once it's in the cart, or a "Select ›" hint when the row needs
+// the full Add-to-Order panel (tapping the row itself still opens that,
+// same as before this feature existed) — every row gets SOME
+// tappable-looking affordance in ci-r, not just the ones that qualify for
+// the inline qty box.
 function comboRowControlsHtml(s){
   const existing = state.cart.find(c=>c.style===s.style);
   const buyerCode = BUYER_CODES[els.customerName.value];
@@ -2752,9 +2776,23 @@ function comboRowControlsHtml(s){
   // those rows fall back to the plain tap-the-row-to-open-panel flow.
   const canQuickAdd = marginResult.status === 'ok' && (available === null || available >= s.casepack);
   if(canQuickAdd){
-    return `<div class="ci-status-row">${badge}<button type="button" class="combo-add-btn" data-add-style="${escapeHtml(s.style)}">ADD</button></div>`;
+    return `<div class="ci-status-row">${badge}<input type="number" class="combo-qty-input" data-qty-style="${escapeHtml(s.style)}" min="0" step="1" inputmode="numeric" placeholder="Boxes"></div>`;
   }
   return `<div class="ci-status-row">${badge}<span class="combo-select-hint">Select ›</span></div>`;
+}
+
+// A row is batchable when comboRowControlsHtml() would have given it the
+// inline qty box — kept in sync with that function's canQuickAdd check
+// rather than sniffing the rendered HTML, since renderComboResults() needs
+// the answer before it decides whether to render the "Add Products" bar at
+// all.
+function comboRowIsBatchable(s){
+  if(state.cart.find(c=>c.style===s.style)) return false;
+  const buyerCode = BUYER_CODES[els.customerName.value];
+  const marginResult = marginFromMasterFor(buyerCode, s.style);
+  if(marginResult.status !== 'ok') return false;
+  const available = scopedAvailableStock(s.style, els.customerName.value);
+  return available === null || available >= s.casepack;
 }
 
 function renderComboResults(){
@@ -2763,7 +2801,7 @@ function renderComboResults(){
   if(matches.length===0){
     els.comboResults.innerHTML = '<div class="combo-empty">No products match your search.</div>';
   } else {
-    els.comboResults.innerHTML = matches.map(s => {
+    const rowsHtml = matches.map(s => {
       const imgUrl = productImageUrl(s.style, 'thumb');
       return `<div class="combo-item" data-style="${escapeHtml(s.style)}">
         ${imgUrl ? `<img class="ci-thumb" src="${imgUrl}" alt="" loading="lazy">` : ''}
@@ -2777,6 +2815,14 @@ function renderComboResults(){
         </div>
       </div>`;
     }).join('');
+    // Only worth showing once at least one row actually got a qty box —
+    // e.g. a single-result search where that one product needs the
+    // Add-to-Order panel instead shouldn't show an "Add Products" bar that
+    // would never have anything to add.
+    const addAllBar = matches.some(comboRowIsBatchable)
+      ? `<div class="combo-add-all-bar"><button type="button" id="comboAddAllBtn" class="combo-add-all-btn">Add Products</button></div>`
+      : '';
+    els.comboResults.innerHTML = rowsHtml + addAllBar;
   }
   els.comboResults.hidden = false;
 }
@@ -2786,22 +2832,44 @@ els.productSearch.addEventListener('input', ()=>{
   renderComboResults();
 });
 
-// One-tap add — skips the Add-to-Order panel entirely for the common case
-// (see comboRowControlsHtml for when a row even offers this button).
-// Doesn't touch the search box or hide the results, so a rep can keep
-// adding more items without retyping, same as Amazon/Flipkart's cart flow.
-function quickAddToCart(style){
-  const s = findSkuByStyle(style);
-  if(!s) return;
+// Adds every search-result row that has a "Boxes" quantity typed into its
+// inline qty box, in one action — skips the Add-to-Order panel entirely,
+// and doesn't touch the search box or hide the results, so a rep can keep
+// adding more items without retyping. Boxes (not pieces) is the unit here,
+// same as the Add-to-Order panel's # Boxes field and the cart's stepper,
+// so casepack multiplication happens here rather than asking the rep to
+// do it in their head. Rows with no qty typed are simply left alone
+// (nothing defaults to "add 1").
+function bulkAddFromCombo(){
+  const inputs = Array.from(els.comboResults.querySelectorAll('.combo-qty-input'));
   const buyerCode = BUYER_CODES[els.customerName.value];
-  const marginResult = marginFromMasterFor(buyerCode, s.style);
-  if(marginResult.status !== 'ok') return; // row shouldn't have offered ADD — defensive only
-  const available = scopedAvailableStock(s.style, els.customerName.value);
-  if(available !== null && available < s.casepack){ toast(`⛔ Only ${available} available — can't add a full case`); return; }
-  state.cart.push({ style: s.style, qty: s.casepack, unitPrice: priceFromMarginPct(s, marginResult.pct), discount: 0, isSample: false });
+  const added = [];
+  const skipped = [];
+  inputs.forEach(input=>{
+    const boxes = parseFloat(input.value);
+    if(!(boxes > 0)) return;
+    const style = input.dataset.qtyStyle;
+    const s = findSkuByStyle(style);
+    if(!s) return;
+    // Re-checked here (not just trusted from render time) in case cart/
+    // stock state shifted between rendering the row and tapping "Add
+    // Products" — e.g. the same SKU already added via another row's qty
+    // box a moment earlier in this same click.
+    const marginResult = marginFromMasterFor(buyerCode, s.style);
+    if(marginResult.status !== 'ok' || state.cart.find(c=>c.style===s.style)){ skipped.push(s.style); return; }
+    const qty = Math.round(boxes * s.casepack);
+    const available = scopedAvailableStock(s.style, els.customerName.value);
+    if(available !== null && qty > available){ skipped.push(`${s.style} (only ${available} available)`); return; }
+    state.cart.push({ style: s.style, qty, unitPrice: priceFromMarginPct(s, marginResult.pct), discount: 0, isSample: false });
+    added.push(s.style);
+  });
+  if(added.length === 0){
+    toast(skipped.length ? `⛔ Couldn't add: ${skipped.join(', ')}` : 'Enter a quantity for at least one product first');
+    return;
+  }
   renderCart();
   renderComboResults();
-  toast(`${s.style} added — 1 case (${s.casepack} pcs)`);
+  toast(`${added.length} product${added.length===1?'':'s'} added${skipped.length ? ` — skipped: ${skipped.join(', ')}` : ''}`);
 }
 
 function incrementCartLine(style){
@@ -2830,15 +2898,29 @@ function decrementCartLine(style){
 }
 
 els.comboResults.addEventListener('click', (e)=>{
-  const addBtn = e.target.closest('[data-add-style]');
-  if(addBtn){ quickAddToCart(addBtn.dataset.addStyle); return; }
+  const addAllBtn = e.target.closest('#comboAddAllBtn');
+  if(addAllBtn){ bulkAddFromCombo(); return; }
   const incBtn = e.target.closest('[data-inc-style]');
   if(incBtn){ incrementCartLine(incBtn.dataset.incStyle); return; }
   const decBtn = e.target.closest('[data-dec-style]');
   if(decBtn){ decrementCartLine(decBtn.dataset.decStyle); return; }
+  // A tap/click landing in or on the qty box itself (or the Add Products
+  // bar) shouldn't also open the Add-to-Order panel via the row-click
+  // fallback below.
+  if(e.target.closest('.combo-qty-input') || e.target.closest('.combo-add-all-bar')) return;
   const item = e.target.closest('.combo-item');
   if(!item) return;
   openAddPanel(item.dataset.style);
+});
+
+// Enter in a qty box submits the whole batch, same as tapping "Add
+// Products" — a rep tabbing/typing through several boxes shouldn't have to
+// reach for the button each time.
+els.comboResults.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter' && e.target.classList.contains('combo-qty-input')){
+    e.preventDefault();
+    bulkAddFromCombo();
+  }
 });
 
 // ============================================================================
