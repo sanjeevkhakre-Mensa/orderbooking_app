@@ -442,11 +442,17 @@
      rep type a quantity for several rows before adding any of them, instead
      of the old one-row-at-a-time ADD button. Nothing is added until
      "Add Products" (below) is tapped; see bulkAddFromCombo(). */
-  .combo-qty-input{
-    width:48px; text-align:center; padding:4px 2px; border:1.5px solid var(--border);
-    border-radius:8px; font-size:12.5px; font-weight:700; color:var(--ink); background:#fff;
+  /* Element + class (not just class) to out-specificity ".field input,
+     .field select, .field textarea" above, which this input also happens
+     to sit inside — without that, this row's qty box was rendering at
+     that rule's width:100%/min-height:44px instead of the compact size
+     meant for a search-result row. */
+  input.combo-qty-input{
+    width:38px; text-align:center; padding:3px 2px; border:1.5px solid var(--border);
+    border-radius:7px; font-size:11.5px; font-weight:700; color:var(--ink); background:#fff;
+    min-height:0;
   }
-  .combo-qty-input:focus{ border-color:var(--blue); outline:none; }
+  input.combo-qty-input:focus{ border-color:var(--blue); outline:none; }
   /* Sticks to the bottom of the (scrollable, max-height) results dropdown
      rather than sitting inline after the last row, so it stays reachable
      without scrolling past every result first. Only rendered at all when
@@ -2776,7 +2782,7 @@ function comboRowControlsHtml(s){
   // those rows fall back to the plain tap-the-row-to-open-panel flow.
   const canQuickAdd = marginResult.status === 'ok' && (available === null || available >= s.casepack);
   if(canQuickAdd){
-    return `<div class="ci-status-row">${badge}<input type="number" class="combo-qty-input" data-qty-style="${escapeHtml(s.style)}" min="0" step="1" inputmode="numeric" placeholder="Boxes"></div>`;
+    return `<div class="ci-status-row">${badge}<input type="number" class="combo-qty-input" data-qty-style="${escapeHtml(s.style)}" min="0" step="1" inputmode="numeric" placeholder="Qty" title="Boxes"></div>`;
   }
   return `<div class="ci-status-row">${badge}<span class="combo-select-hint">Select ›</span></div>`;
 }
