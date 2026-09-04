@@ -3707,6 +3707,14 @@ function buildOrderPdfBlob(payload){
     body: rows,
     styles: {fontSize:8, cellPadding:4},
     headStyles: {fillColor:[0,174,239], textColor:255},
+    // autoTable logs a harmless "N units could not fit page" console
+    // warning whenever these don't sum to EXACTLY what it computes
+    // internally as available width — which isn't quite pageWidth minus
+    // the margins passed in above (tried both smaller and larger sums;
+    // smaller made the reported mismatch bigger, not smaller). At under
+    // 0.3pt either way, it has zero visible effect on the rendered table
+    // (confirmed), so this is tuned for the smallest logged mismatch
+    // rather than chased to an exact zero.
     columnStyles: {
       0:{cellWidth:20}, 1:{cellWidth:65}, 2:{cellWidth:45}, 3:{cellWidth:95},
       4:{cellWidth:40, halign:'right'}, 5:{cellWidth:55, halign:'right'}, 6:{cellWidth:35, halign:'right'},
