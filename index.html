@@ -1059,6 +1059,19 @@
   <div class="toast" id="toast"></div>
 </div>
 
+<!-- jsPDF + autoTable — the one external dependency in an otherwise
+     self-contained file (see the barcode-scanner/image-scan sections'
+     "no bundled library" comments elsewhere here). Generating a real PDF
+     Blob client-side — one that can be attached to WhatsApp via
+     navigator.share the same way the order CSV already is, or downloaded
+     on desktop — isn't possible with any built-in browser API; the only
+     dependency-free alternative is window.print()'s "Save as PDF", which
+     produces no Blob at all and can't be attached programmatically. Pinned
+     exact versions, loaded from cdnjs, so this still works unmodified for
+     as long as cdnjs does. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
 <script>
 // ============================================================================
 // CONFIG — fill these in once, then this file is ready to hand to your team.
@@ -3617,6 +3630,111 @@ function orderFileName(payload){
   return `${safeFileNamePart(payload.customerName)}${amountPart}.csv`;
 }
 
+function orderPdfFileName(payload){
+  const amountPart = payload.netOrderValue ? `_${payload.netOrderValue}` : '';
+  return `${safeFileNamePart(payload.customerName)}${amountPart}.pdf`;
+}
+
+// ============================================================================
+// ORDER DETAILS PDF — a customer-facing recap generated on Submit, styled
+// after the company's real Proforma Invoice layout (title block, line-items
+// table, totals) but deliberately NOT a tax invoice: it has no GSTIN/HSN/
+// buyer-address/bank-details section, none of which this app has anywhere
+// to source from (Customer Master has no GSTIN/address/contact columns,
+// the Product Masters have no HSN column) — showing blank or made-up values
+// for those on what looks like an official document would be worse than
+// just not having the fields. Only Accepted lines are included, same
+// reasoning as buildCsvRows() above.
+// ============================================================================
+function buildOrderPdfBlob(payload){
+  const doc = new window.jspdf.jsPDF({ unit:'pt', format:'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 40;
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(16);
+  doc.text('MyFitness | Pro.Fitness', pageWidth/2, 44, {align:'center'});
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  doc.text('Tanvi Fitness Pvt. Ltd.', pageWidth/2, 60, {align:'center'});
+  doc.setFont('helvetica','bold'); doc.setFontSize(13);
+  doc.text('ORDER DETAILS', pageWidth/2, 82, {align:'center'});
+
+  const accepted = payload.lines.filter(l=>l.validation==='Accepted');
+  const orderDate = payload.submittedAt ? formatHistoryDate(payload.submittedAt) : '';
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  let y = 108;
+  const infoRow = (label, value) => {
+    doc.setFont('helvetica','bold'); doc.text(label, marginX, y);
+    doc.setFont('helvetica','normal'); doc.text(String(value||'-'), marginX+110, y);
+    y += 16;
+  };
+  infoRow('Order No:', payload.orderNo);
+  infoRow('Date:', orderDate);
+  infoRow('Customer Name:', payload.customerName);
+  infoRow('Sales Channel:', payload.salesChannel);
+
+  // jsPDF's built-in fonts (Helvetica etc.) only cover WinAnsi/Latin-1 —
+  // the ₹ sign (U+20B9) isn't in that set and silently renders as a
+  // garbled superscript-1 glyph instead of throwing, so this is a "Rs."
+  // prefix rather than the real symbol throughout the PDF (embedding a
+  // Unicode-covering TTF just for one character isn't worth the added
+  // weight on a page this simple).
+  const rows = accepted.map((l,i)=>{
+    const qty = parseFloat(l.qty)||0;
+    const unitPrice = parseFloat(l.unitPrice)||0;
+    const discount = parseFloat(l.discount)||0;
+    const taxable = (qty*unitPrice) - discount;
+    // Plain EAN here, not formatScanIdentifier()'s ".00"-suffixed form —
+    // that suffix exists only to stop the destination sheet's CSV import
+    // from mangling the code into scientific notation; a human-read PDF
+    // has no such need and the suffix would just look like a stray decimal.
+    return [
+      i+1, l.ean||'-', l.style,
+      stripBrandPrefix(l.desc), qty, `Rs. ${unitPrice.toFixed(2)}`, `Rs. ${l.mrp}`,
+      `Rs. ${taxable.toFixed(2)}`, `Rs. ${(parseFloat(l.gstAmount)||0).toFixed(2)}`, `Rs. ${(parseFloat(l.lineTotal)||0).toFixed(2)}`
+    ];
+  });
+
+  // Explicit cellWidth on every column (summing to the ~515pt available
+  // between the margins on an A4 page) rather than letting autoTable size
+  // them from content — its default word-wrap-to-fit sizing squeezed the
+  // 5 rightmost numeric columns so tight that neighboring cells' text
+  // visually overlapped instead of wrapping.
+  doc.autoTable({
+    startY: y+8,
+    margin: {left:marginX, right:marginX},
+    head: [['Sr.','Scan Identifier','SKU','Description','Qty (Pcs)','Unit Price','MRP','Taxable Value','GST','Total']],
+    body: rows,
+    styles: {fontSize:8, cellPadding:4},
+    headStyles: {fillColor:[0,174,239], textColor:255},
+    columnStyles: {
+      0:{cellWidth:20}, 1:{cellWidth:65}, 2:{cellWidth:45}, 3:{cellWidth:95},
+      4:{cellWidth:40, halign:'right'}, 5:{cellWidth:55, halign:'right'}, 6:{cellWidth:35, halign:'right'},
+      7:{cellWidth:60, halign:'right'}, 8:{cellWidth:45, halign:'right'}, 9:{cellWidth:55, halign:'right'}
+    }
+  });
+
+  // Right-aligned into its own fixed-width slot, with the label (whatever
+  // its length) right-aligned into the space before that slot instead of
+  // left-aligned from a fixed X — the latter let a long label's text run
+  // in underneath the value next to it instead of stopping short of it.
+  let finalY = doc.lastAutoTable.finalY + 20;
+  const totalsRow = (label, value) => {
+    doc.setFont('helvetica','bold'); doc.text(label, pageWidth-marginX-100, finalY, {align:'right'});
+    doc.setFont('helvetica','normal'); doc.text(`Rs. ${value}`, pageWidth-marginX, finalY, {align:'right'});
+    finalY += 16;
+  };
+  totalsRow('Total Order Value (Before GST):', payload.totalBeforeGst);
+  totalsRow('Total GST Amount:', payload.totalGst);
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  totalsRow('Net Order Value (Final Payable):', payload.netOrderValue);
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120);
+  doc.text('This is a computer-generated document. No signature is required.', pageWidth/2, doc.internal.pageSize.getHeight()-30, {align:'center'});
+
+  return doc.output('blob');
+}
+
 // opts.includeCsv (default true) controls whether the raw CSV rows get
 // embedded in the message text — see the comment where it's used below for
 // why this needs to be OFF when a real file is being attached alongside it.
@@ -3835,9 +3953,9 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   try{ await postToSheet(payload); } catch(err){ sheetOk = false; console.error('Sheet sync failed', err); }
 
   // Step C: open WhatsApp with the order details (native share sheet with
-  // the CSV attached as a real file, when the phone/browser supports it;
-  // otherwise a CSV download + plain wa.me link). This runs LAST, on
-  // purpose — see the comment on Step A above.
+  // the CSV + Order Details PDF attached as real files, when the phone/
+  // browser supports it; otherwise both download + a plain wa.me link).
+  // This runs LAST, on purpose — see the comment on Step A above.
   //
   // The order CSV is ALSO always embedded as text inside the message itself
   // (buildWhatsAppMessage already does this — see its comment) regardless
@@ -3846,7 +3964,7 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   // combination where file-sharing silently isn't supported, without
   // depending on native file-attach working. The file attach is still
   // attempted on top of that for phones that DO support it, since reps
-  // need an actual .csv file they can forward/import, not just message
+  // need actual .csv/.pdf files they can forward/import, not just message
   // text — accepting that the OS's "allow access to photos and media"
   // permission prompt is an inherent, one-time part of real file-sharing
   // via the browser (not something removable while still attaching a
@@ -3854,22 +3972,31 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   // Two versions of the message: the full one (CSV rows included as text)
   // is what "Send yourself a copy" uses and what goes out when there's no
   // file attached at all — the only copy of that data reaching WhatsApp in
-  // that case. When the file DOES attach successfully, no message/caption
-  // is sent at all — the CSV itself now has every detail needed, so a
-  // separate text message would just be redundant.
+  // that case. When the files DO attach successfully, no message/caption
+  // is sent at all — the CSV/PDF themselves now have every detail needed,
+  // so a separate text message would just be redundant.
   const message = buildWhatsAppMessage(payload);
   const csvBlob = buildCsvBlob(payload);
   const fileName = orderFileName(payload);
+  const files = [new File([csvBlob], fileName, {type:'text/csv'})];
+  // The PDF depends on jsPDF having loaded from its CDN (see the <script>
+  // tags above the CONFIG section) — on a flaky connection that can fail
+  // even when everything else here works fine, so a failure here falls
+  // back to CSV-only rather than blocking the whole submission on a PDF
+  // that isn't essential to actually placing the order.
+  try{
+    const pdfBlob = buildOrderPdfBlob(payload);
+    files.push(new File([pdfBlob], orderPdfFileName(payload), {type:'application/pdf'}));
+  } catch(err){ console.error('Order PDF generation failed', err); }
 
   let shareOutcome = 'shared'; // 'shared' | 'downloaded' | 'cancelled'
   try{
-    const file = new File([csvBlob], fileName, {type:'text/csv'});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({ files:[file], title:'MyFitness Order' });
+    if(navigator.canShare && navigator.canShare({files})){
+      await navigator.share({ files, title:'MyFitness Order' });
       shareOutcome = 'shared';
     } else {
       shareOutcome = 'downloaded';
-      downloadBlob(csvBlob, fileName);
+      files.forEach(f=>downloadBlob(f, f.name));
       const waUrl = WHATSAPP_NUMBER
         ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
         : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
@@ -3885,7 +4012,7 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
     } else {
       console.error(err);
       shareOutcome = 'downloaded';
-      downloadBlob(csvBlob, fileName);
+      files.forEach(f=>downloadBlob(f, f.name));
       const waUrl = WHATSAPP_NUMBER
         ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
         : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
