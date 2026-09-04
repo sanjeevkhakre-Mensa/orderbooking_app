@@ -478,34 +478,6 @@
   .combo-empty{ padding:14px; text-align:center; color:var(--muted); font-size:12.5px; }
   .combo-empty.new-customer{ color:var(--green-text); background:var(--green-bg); border-radius:8px; font-weight:600; }
 
-  /* Barcode scan button, overlapping the right edge of #productSearch —
-     hidden by default and only shown once BarcodeDetector support is
-     confirmed on load (see the scanner JS section), so browsers without it
-     (notably iOS Safari at time of writing) never see a button that would
-     silently do nothing when tapped. */
-  #productSearch{ padding-right:44px; }
-  .combo-scan-btn{
-    position:absolute; right:5px; top:5px; bottom:5px; width:34px;
-    border:none; border-radius:8px; background:transparent;
-    font-size:18px; line-height:1; cursor:pointer; color:var(--blue);
-    display:flex; align-items:center; justify-content:center;
-  }
-  .combo-scan-btn:hover{ background:rgba(0,174,239,0.1); }
-  .combo-scan-btn.hidden{ display:none; }
-
-  /* ---------------- Barcode Scanner overlay ---------------- */
-  .scanner-video-wrap{
-    position:relative; background:#000; border-radius:10px; overflow:hidden;
-    aspect-ratio:4/3;
-  }
-  .scanner-video-wrap video{ width:100%; height:100%; object-fit:cover; display:block; }
-  .scanner-frame{
-    position:absolute; inset:15% 10%; border-radius:10px;
-    border:3px solid var(--lime); box-shadow:0 0 0 9999px rgba(0,0,0,0.35);
-    pointer-events:none;
-  }
-  .scanner-status{ text-align:center; font-size:12.5px; color:var(--muted); margin-top:10px; padding:0 4px; }
-
   /* ---------------- Image-Based SKU & Quantity Scan ---------------- */
   .imgscan-row{ margin-top:0; margin-bottom:0; }
   .imgscan-row .btn{ width:100%; }
@@ -894,28 +866,6 @@
     </div>
   </div>
 
-  <!-- Barcode Scanner overlay: camera-based EAN lookup for the product
-       search step, reusing the same history-overlay/history-sheet shell as
-       Order History/Inventory above. Native BarcodeDetector API only — no
-       bundled scanning library, keeping index.html a single self-contained
-       file — so #btnScanBarcode stays hidden on browsers without support
-       (see the feature-detect near the scanner JS below). -->
-  <div class="history-overlay hidden" id="scannerOverlay">
-    <div class="history-sheet">
-      <div class="history-head">
-        <h3>Scan Barcode</h3>
-        <button type="button" class="history-close" id="scannerClose" title="Close">✕</button>
-      </div>
-      <div class="history-body">
-        <div class="scanner-video-wrap">
-          <video id="scannerVideo" autoplay muted playsinline></video>
-          <div class="scanner-frame"></div>
-        </div>
-        <div class="scanner-status" id="scannerStatus">Point the camera at a product barcode.</div>
-      </div>
-    </div>
-  </div>
-
   <!-- One unified, hard-to-miss install banner — replaces the old small
        topbar icon (Android) and separate iOS hint. Whichever platform
        fired (or a plain "not supported here" case), only one message
@@ -969,7 +919,6 @@
             <input id="customerName" type="text" placeholder="Search buyer name or city… or type a new customer name" autocomplete="off" required>
             <div class="combo-results" id="buyerResults" hidden></div>
           </div>
-          <span class="field-hint" id="customerFieldHint">Search from saved buyers, or type a new customer name to add them to this order — save them in the Customer Master sheet so they show up in search next time.</span>
         </div>
         <div class="field">
           <label>Sales Channel</label>
@@ -1047,7 +996,6 @@
         <div class="field">
           <div class="combo">
             <input type="text" id="productSearch" placeholder="🔍 Search products…" autocomplete="off">
-            <button type="button" class="combo-scan-btn hidden" id="btnScanBarcode" title="Scan barcode">📷</button>
             <div class="combo-results" id="comboResults" hidden></div>
           </div>
         </div>
@@ -1221,8 +1169,7 @@ const UNMATCHED_SKU_URL = "";
 // Image-Based SKU & Quantity Scan — see IMAGE_SCAN_SETUP_GUIDE.md for
 // one-time setup (Gemini API key, deploying apps-script/ImageOrderScan.gs
 // as its own Web App). Leave blank to keep the "📷 Scan Order Photo"
-// button in Search & Add Products hidden entirely, same reasoning as the
-// barcode scanner staying hidden when unsupported — a button that fails
+// button in Search & Add Products hidden entirely — a button that fails
 // on every tap is worse than no button.
 const IMAGE_SCAN_WEBAPP_URL = "";
 
@@ -1402,7 +1349,7 @@ const els = {};
  'inventoryBtn','inventoryOverlay','inventoryClose','invSyncStatus','invSearch','invTableBody','invTableHeadRow',
  'invUnmatchedToggle','invUnmatchedBody','btnSyncInventoryNow',
  'marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
- 'productSearch','comboResults','btnScanBarcode','scannerOverlay','scannerClose','scannerVideo','scannerStatus','salesChannelHint',
+ 'productSearch','comboResults','salesChannelHint',
  'imgScanRow','btnImgScan','imgScanFile','imgScanStatus','imgScanResults',
  'addPanel','cartList','cartCount','miniSummary','msLines','msAccepted','msRejected','msValue',
  'rvTotalValue',
@@ -2940,84 +2887,14 @@ els.comboResults.addEventListener('keydown', (e)=>{
 });
 
 // ============================================================================
-// BARCODE SCANNER — native BarcodeDetector API only (Chrome/Android; not
-// iOS Safari as of this writing). No bundled scanning library, so the app
-// stays a single self-contained file. Feature-detected once here so the
-// scan button only appears where it will actually work — a button that
-// silently fails on tap is worse than no button.
-// ============================================================================
-let scannerStream = null;
-let scannerLoopId = null;
-
-if('BarcodeDetector' in window && els.btnScanBarcode){
-  els.btnScanBarcode.classList.remove('hidden');
-}
-
-async function openScanner(){
-  if(!els.scannerOverlay) return;
-  els.scannerOverlay.classList.remove('hidden');
-  els.scannerStatus.textContent = 'Point the camera at a product barcode.';
-  try{
-    scannerStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } });
-    els.scannerVideo.srcObject = scannerStream;
-    await els.scannerVideo.play();
-    const detector = new BarcodeDetector({ formats:['ean_13','ean_8','upc_a','upc_e','code_128'] });
-    const scanFrame = async ()=>{
-      if(!scannerStream) return; // closed mid-flight — stop looping
-      try{
-        const codes = await detector.detect(els.scannerVideo);
-        if(codes.length){ handleScannedCode(codes[0].rawValue); return; }
-      }catch(e){ /* one bad frame shouldn't kill the loop */ }
-      scannerLoopId = requestAnimationFrame(scanFrame);
-    };
-    scanFrame();
-  }catch(e){
-    // Covers permission-denied, no camera, and insecure-origin (getUserMedia
-    // needs https or localhost) in one message — the exact reason matters
-    // less than "typing the code into search still works either way".
-    els.scannerStatus.textContent = "Couldn't access the camera — you can still type the barcode into the search box.";
-  }
-}
-
-function closeScanner(){
-  if(scannerLoopId) cancelAnimationFrame(scannerLoopId);
-  scannerLoopId = null;
-  if(scannerStream){ scannerStream.getTracks().forEach(t=>t.stop()); scannerStream = null; }
-  if(els.scannerVideo) els.scannerVideo.srcObject = null;
-  els.scannerOverlay.classList.add('hidden');
-}
-
-function handleScannedCode(rawValue){
-  closeScanner();
-  const scanned = normalizeEan(rawValue);
-  const match = scanned && activeSkus().find(s => normalizeEan(s.ean) === scanned);
-  if(match){
-    openAddPanel(match.style);
-  } else {
-    // No exact EAN match (misread digit, or a barcode not in the Product
-    // Master) — fall back to the normal text search so near matches still
-    // surface, same as if the rep had typed the code in by hand.
-    els.productSearch.value = rawValue;
-    els.productSearch.dispatchEvent(new Event('input'));
-    toast('No exact product match for scanned code ' + rawValue + ' — showing closest text matches.');
-  }
-}
-
-els.btnScanBarcode.addEventListener('click', openScanner);
-els.scannerClose.addEventListener('click', closeScanner);
-els.scannerOverlay.addEventListener('click', (e)=>{
-  if(e.target === els.scannerOverlay) closeScanner();
-});
-
-// ============================================================================
 // IMAGE-BASED SKU & QUANTITY SCAN — reads a photo (handwritten note,
 // printed list, or product packages) via a Gemini-backed Apps Script Web
 // App (see IMAGE_SCAN_SETUP_GUIDE.md), matches each detected product
 // against the currently active Product Master, and adds matches straight
 // into the cart with the detected quantity. Unmatched items are listed
 // separately so a rep can search and add them by hand — never silently
-// dropped. Hidden entirely until IMAGE_SCAN_WEBAPP_URL is configured, same
-// reasoning as the barcode scanner staying hidden when unsupported.
+// dropped. Hidden entirely until IMAGE_SCAN_WEBAPP_URL is configured — a
+// button that fails on every tap is worse than no button.
 // ============================================================================
 if(IMAGE_SCAN_WEBAPP_URL && els.imgScanRow){
   els.imgScanRow.hidden = false;
