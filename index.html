@@ -365,12 +365,13 @@
     max-height:min(320px, 50vh); overflow-y:auto; z-index:30;
   }
   .combo-item{
-    /* Tightened from 10px 12px — with the wider box above, this is the
-       main lever for fitting more products on screen without scrolling;
-       the row's height is set by .ci-thumb (36px) either way, so vertical
-       padding beyond a small amount was just unused whitespace. */
-    padding:6px 10px; border-bottom:1px solid #f1f3f4; cursor:pointer;
-    display:flex; align-items:center; gap:8px;
+    /* Loosened back up from a prior 6px 10px — that made the row feel
+       cramped once the qty box below grew to a real touch target; the
+       row's height now comes from whichever is tallest (thumb, wrapped
+       description, or the qty box + its unit label) rather than the
+       thumb alone. */
+    padding:9px 10px; border-bottom:1px solid #f1f3f4; cursor:pointer;
+    display:flex; align-items:center; gap:10px;
     animation:fadein .14s ease;
   }
   .combo-item:last-child{ border-bottom:none; }
@@ -385,17 +386,25 @@
      exists; object-fit:cover crops to fill the square rather than
      distorting a non-square source photo. */
   .ci-thumb{
-    width:36px; height:36px; border-radius:7px; object-fit:cover;
+    width:42px; height:42px; border-radius:8px; object-fit:cover;
     flex-shrink:0; background:var(--gray-bg);
   }
-  .combo-item .ci-style{ font-weight:800; font-size:12.5px; color:var(--ink); }
-  .combo-item .ci-desc{ font-size:11.5px; color:#556; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .combo-item .ci-r{ text-align:right; flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:2px; }
+  .combo-item .ci-style{ font-weight:800; font-size:13px; color:var(--ink); letter-spacing:.1px; }
+  /* 2-line clamp instead of a single-line ellipsis — variants that only
+     differ in their last word (Smooth/Crunchy/Crispy, as in the C227
+     family) were losing exactly the word that tells them apart on
+     narrower screens; wrapping costs a little vertical space but never
+     hides the one word that actually matters here. */
+  .combo-item .ci-desc{
+    font-size:12px; line-height:1.35; color:#4a5a66; margin-top:1px;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .combo-item .ci-r{ text-align:right; flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
   /* Two rows total in ci-r (price+MRP, then badge+control) instead of up
      to four stacked separately — see comboRowPriceHtml()/
      comboRowControlsHtml(). */
   .ci-price-row{ display:flex; align-items:baseline; gap:5px; }
-  .ci-status-row{ display:flex; align-items:center; gap:6px; }
+  .ci-status-row{ display:flex; align-items:center; gap:7px; }
   .combo-item .ci-mrp{ font-size:12px; font-weight:700; color:var(--ink); }
   /* Selling price (Margin Master resolved) shown ahead of MRP — a rep
      shouldn't have to open the panel just to see what the customer will
@@ -404,10 +413,10 @@
      resolved price (marginResult.status 'ok'/'sample') — see
      comboRowPriceHtml(); a row with no/duplicate margin still can't show
      one, same reasoning as it not getting the one-tap ADD button. */
-  .ci-price{ font-size:13.5px; font-weight:800; color:var(--ink); }
+  .ci-price{ font-size:14.5px; font-weight:800; color:var(--ink); }
   .ci-price.sample{ color:var(--green-text); }
-  .ci-mrp-strike{ font-size:10px; color:var(--muted); text-decoration:line-through; }
-  .stock-badge{ font-size:9.5px; font-weight:700; padding:2px 6px; border-radius:20px; display:inline-block; }
+  .ci-mrp-strike{ font-size:10.5px; color:var(--muted); text-decoration:line-through; }
+  .stock-badge{ font-size:10px; font-weight:700; padding:3px 7px; border-radius:20px; display:inline-block; }
   .stock-badge.in{ background:var(--green-bg); color:var(--green-text); }
   /* Two different severities, not one flat gray "out" — zero stock (can't
      sell at all) reads as urgent/red, same as .inv-check.bad elsewhere;
@@ -441,18 +450,38 @@
   /* Inline "Boxes" entry, one per quick-addable search result row — lets a
      rep type a quantity for several rows before adding any of them, instead
      of the old one-row-at-a-time ADD button. Nothing is added until
-     "Add Products" (below) is tapped; see bulkAddFromCombo(). */
+     "Add Products" (below) is tapped; see bulkAddFromCombo().
+     Wrapped with its own "BOX" caption (combo-qty-unit) underneath rather
+     than relying on the input's placeholder alone — a placeholder vanishes
+     the moment a rep types a number, and at a glance "5" reads as pieces
+     just as easily as boxes; the caption stays put either way. */
+  .combo-qty-wrap{ display:flex; flex-direction:column; align-items:center; gap:2px; }
+  .combo-qty-unit{
+    font-size:8.5px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.4px;
+  }
   /* Element + class (not just class) to out-specificity ".field input,
      .field select, .field textarea" above, which this input also happens
-     to sit inside — without that, this row's qty box was rendering at
-     that rule's width:100%/min-height:44px instead of the compact size
-     meant for a search-result row. */
+     to sit inside — without that, this row's qty box rendered at that
+     rule's width:100%/min-height:44px instead of a size that fits a
+     search-result row. Sized as a real touch target (44px tall) rather
+     than shrunk to the bare minimum, with a light blue tint so it reads
+     as an interactive field rather than static text next to it. */
   input.combo-qty-input{
-    width:38px; text-align:center; padding:3px 2px; border:1.5px solid var(--border);
-    border-radius:7px; font-size:11.5px; font-weight:700; color:var(--ink); background:#fff;
-    min-height:0;
+    width:56px; min-height:44px; text-align:center; padding:4px; border:1.5px solid var(--border);
+    border-radius:9px; font-size:16px; font-weight:800; color:var(--ink); background:#f5fbfe;
+    box-sizing:border-box; -moz-appearance:textfield;
   }
-  input.combo-qty-input:focus{ border-color:var(--blue); outline:none; }
+  input.combo-qty-input::-webkit-outer-spin-button,
+  input.combo-qty-input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  /* Without this, the "0" placeholder inherited the same bold/dark styling
+     as real typed text and was indistinguishable from an actually-entered
+     zero — a rep could easily mistake an empty row for one already filled
+     in. */
+  input.combo-qty-input::placeholder{ color:var(--muted); font-weight:600; opacity:1; }
+  input.combo-qty-input:focus{
+    border-color:var(--blue); outline:none; background:#fff;
+    box-shadow:0 0 0 3px rgba(0,174,239,0.15);
+  }
   /* Sticks to the bottom of the (scrollable, max-height) results dropdown
      rather than sitting inline after the last row, so it stays reachable
      without scrolling past every result first. Only rendered at all when
@@ -462,8 +491,9 @@
     padding:8px 10px;
   }
   .combo-add-all-btn{
-    width:100%; background:var(--blue); color:#fff; border:none; border-radius:20px;
-    padding:9px 14px; font-size:12.5px; font-weight:800; cursor:pointer; letter-spacing:.2px;
+    width:100%; min-height:44px; background:var(--blue); color:#fff; border:none; border-radius:20px;
+    padding:10px 14px; font-size:13.5px; font-weight:800; cursor:pointer; letter-spacing:.2px;
+    box-sizing:border-box;
   }
   .combo-add-all-btn:hover{ background:var(--blue-dark); }
   .combo-stepper{
@@ -2739,7 +2769,7 @@ function comboRowControlsHtml(s){
   // those rows fall back to the plain tap-the-row-to-open-panel flow.
   const canQuickAdd = marginResult.status === 'ok' && (available === null || available >= s.casepack);
   if(canQuickAdd){
-    return `<div class="ci-status-row">${badge}<input type="number" class="combo-qty-input" data-qty-style="${escapeHtml(s.style)}" min="0" step="1" inputmode="numeric" placeholder="Box" title="Boxes"></div>`;
+    return `<div class="ci-status-row">${badge}<div class="combo-qty-wrap"><input type="number" class="combo-qty-input" data-qty-style="${escapeHtml(s.style)}" min="0" step="1" inputmode="numeric" placeholder="0" title="Boxes"><span class="combo-qty-unit">Box</span></div></div>`;
   }
   return `<div class="ci-status-row">${badge}<span class="combo-select-hint">Select ›</span></div>`;
 }
@@ -2870,7 +2900,7 @@ els.comboResults.addEventListener('click', (e)=>{
   // A tap/click landing in or on the qty box itself (or the Add Products
   // bar) shouldn't also open the Add-to-Order panel via the row-click
   // fallback below.
-  if(e.target.closest('.combo-qty-input') || e.target.closest('.combo-add-all-bar')) return;
+  if(e.target.closest('.combo-qty-wrap') || e.target.closest('.combo-add-all-bar')) return;
   const item = e.target.closest('.combo-item');
   if(!item) return;
   openAddPanel(item.dataset.style);
