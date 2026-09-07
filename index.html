@@ -1207,7 +1207,7 @@ const IMAGE_SCAN_WEBAPP_URL = "";
 // (blocking) instead of just shown as an advisory warning in the Add-to-
 // Order panel. Defaults to false so existing order-booking behavior is
 // completely unchanged until you're ready to turn this on.
-const STOCK_VALIDATION_ENABLED = false;
+const STOCK_VALIDATION_ENABLED = true;
 
 // ============================================================================
 // PWA - PROGRESSIVE WEB APP
@@ -2561,18 +2561,6 @@ function priceTypeFor(sku, unitPrice, isSample){
   return { priceType: 'SPECIAL', price: unitPrice.toFixed(2) };
 }
 
-// Remaining Inventory (Total Available minus Booked Qty) tracked in
-// LIVE_INVENTORY — see OrderLoggingAddition.gs, which keeps this live on
-// every order submission. Only tracked in aggregate (not per-warehouse), so
-// stock validation below blocks against the overall figure regardless of
-// which Fulfilment Location is selected. Returns null when there's no
-// inventory data for this SKU at all, so an unsynced/unmatched SKU is never
-// blocked purely for lack of data.
-function availableStockFor(style){
-  const inv = LIVE_INVENTORY[style];
-  return inv ? inv.remaining : null;
-}
-
 // Warehouse-scoped Live Inventory available quantity for a SKU + customer —
 // shared by the Add-to-Order panel's advisory box AND the hard block on the
 // Add to Order button itself (see openAddPanel below). Scoped to whichever
@@ -2581,14 +2569,20 @@ function availableStockFor(style){
 // overlay table — a West GT buyer shouldn't see GGN-only stock counted as
 // available to them when GGN can't actually ship there. Falls back to
 // aggregate ("all locations") for a channel with no defined rule, or no
-// customer selected yet. Returns null when there's no Live Inventory data
-// for this SKU at all (unsynced/unmatched SKU, or inventory not loaded) —
-// callers treat that as "unknown", not "zero", and don't block on it.
+// customer selected yet. Net of Booked Qty either way — same
+// scopedTotal-minus-booked math as the Inventory overlay table (see
+// renderInventoryTable) — so a SKU already booked against other orders never
+// shows/allows more than what's actually left. Returns null when there's no
+// Live Inventory data for this SKU at all (unsynced/unmatched SKU, or
+// inventory not loaded) — callers treat that as "unknown", not "zero", and
+// don't block on it.
 function scopedAvailableStock(style, customerLabel){
   const inv = LIVE_INVENTORY[style];
   if(!inv) return null;
   const warehouses = warehousesForCustomer(customerLabel);
-  return warehouses ? warehouses.reduce((sum,w)=>sum+(inv[w]||0),0) : inv.all;
+  if(!warehouses) return inv.remaining;
+  const scopedTotal = warehouses.reduce((sum,w)=>sum+(inv[w]||0),0);
+  return Math.max(0, scopedTotal - inv.booked);
 }
 
 function evaluateLine(sku, qty, unitPrice, discount, isSample){
@@ -2606,7 +2600,11 @@ function evaluateLine(sku, qty, unitPrice, discount, isSample){
   // guard only applies when isSample isn't set.
   else if(!(unitPrice > 0) && !isSample) alert = 'Unit price must be greater than 0';
   else if(STOCK_VALIDATION_ENABLED){
-    const available = availableStockFor(sku.style);
+    // Same warehouse-scoped, booked-aware figure shown on the search result
+    // badge and the Add-to-Order panel — reads els.customerName.value
+    // directly rather than threading a param through, same convention every
+    // other scopedAvailableStock() call site in this file already uses.
+    const available = scopedAvailableStock(sku.style, els.customerName.value);
     if(available !== null && qty > available) alert = `Insufficient stock — only ${available} available`;
   }
 
@@ -3855,6 +3853,25 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   // that function below. This is what makes editing update the existing
   // Order History record instead of creating a duplicate Order ID.
   saveOrderHistoryEntry(payload);
+
+  // Step A.5: decrement this device's live-inventory picture immediately,
+  // same "record it before the WhatsApp handoff" reasoning as Step A above —
+  // so the rep sees the post-order balance right away instead of waiting on
+  // the next Live Inventory sync (or the sheet-side booked-qty addition in
+  // OrderLoggingAddition.gs, which is the only thing that makes this
+  // decrement visible on OTHER devices/sessions). Booked Qty/Remaining are
+  // only tracked in aggregate here (not per-warehouse — see LIVE_INVENTORY),
+  // matching scopedAvailableStock()'s own booked-aware math.
+  payload.lines
+    .filter(l => l.validation === 'Accepted')
+    .forEach(l => {
+      const inv = LIVE_INVENTORY[l.style];
+      if(!inv) return; // unsynced/unmatched SKU — nothing to decrement
+      inv.booked = (inv.booked || 0) + (parseFloat(l.qty) || 0);
+      inv.remaining = Math.max(0, inv.all - inv.booked);
+    });
+  if(els.inventoryOverlay && !els.inventoryOverlay.classList.contains('hidden')) renderInventoryTable();
+  if(els.comboResults && !els.comboResults.hidden) renderComboResults();
 
   // Step B: save to the Order History Google Sheet (the "transaction
   // table" — see the Apps Script setup guide). This never blocks the
