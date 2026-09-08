@@ -26,17 +26,22 @@ shows as its own card, and one without an invoice yet still shows (with a
 plain "No invoice uploaded yet" note) so an ASM can see every one of that
 customer's orders, not just the ones already invoiced.
 
-## Naming convention — this is the only rule that matters
+## Naming convention — much looser than it sounds
 
-For Order Number `SO-2026-00125`, the file must be named:
+Ideally, for Order Number `SO-2026-00125`, name the file:
 
 ```
 SO-2026-00125.pdf
 ```
 
-Case doesn't matter (`so-2026-00125.pdf` also matches), but the rest of the
-name must match the Order Number exactly — no extra spaces, no "(1)", no
-" - copy". One file per Order Number.
+But it doesn't have to be exact — search matches any part of the filename,
+case-insensitively, and by actual file type (not by whether the name ends
+in ".pdf") — so a PDF renamed to just `Ajfan` with no extension at all
+still gets found by searching "ajfan". The one thing that DOES matter: a
+typo in the filename is a typo in what's searchable — a file saved as
+`Body Fu Invoice.pdf` will never turn up for a search of "Body Fuel",
+because that exact text genuinely isn't in the name. If a real invoice
+isn't showing up, check the filename for typos first.
 
 ## Step 1 — Pick (or create) the Drive folder
 
@@ -94,28 +99,29 @@ sharing) so the ASM's browser can open it without signing in. Every other
 file in the folder — including invoices no one has searched for yet —
 stays exactly as private as it already was.
 
-## Accepted date formats
+## How matching works
 
-Typing a date searches for every order placed that day. Any of these work:
-`2026-09-08`, `08-09-2026`, `08/09/2026`, or `08-Sep-2026` (the exact format
-shown elsewhere in the app). Anything that doesn't match one of these
-patterns is treated as a Customer Name search instead, never an error.
+Typing anything checks it against, all at once: every order's Order
+Number, Customer Name, and Date (as shown in the app, e.g. `08-Sep-2026`)
+in the Order History sheet, AND every invoice filename in the Drive
+folder — whichever contains the typed text, case-insensitively, no
+minimum length. So "ajfan", "08-Sep", "sep-2026", or a single letter all
+work the same way, and a date search really just means "does the date
+column contain this text" — no fixed format is required.
 
 ## If a search comes back "No orders found" but you know the order exists
 
-- For a Customer Name search: it only matches Order History's own
-  `Customer Name` column, so it can only find orders already logged there
-  — an order submitted before the order-logging Web App was working won't
-  show up this way (Order Number search still finds its invoice directly,
+- For a Customer Name or Date search: it only matches Order History's own
+  columns, so it can only find orders already logged there — an order
+  submitted before the order-logging Web App was working won't show up
+  this way (searching its Order Number directly still finds its invoice,
   independent of the sheet).
-- For a Date search: double check the format against the list above.
-- For an Order Number search: almost always a filename mismatch — check:
-  - The file is a `.pdf` (not `.docx`, `.jpg`, a Drive-native Doc, etc.)
-  - The name (minus `.pdf`) matches the Order Number exactly — copy-paste
-    the Order Number from the app rather than retyping it, to rule out a
-    typo.
-  - The file is actually inside the configured folder, not a subfolder or
-    a shortcut elsewhere in Drive.
+- For any search that should be matching a Drive file: the file has to
+  genuinely be a PDF (checked by its actual file type, not its name) and
+  its filename has to actually contain the text you typed — check for a
+  typo in the filename itself (copy-paste from the app instead of
+  retyping, to rule that out) and confirm the file is inside the
+  configured folder, not a subfolder or a shortcut elsewhere in Drive.
 
 ## If the app shows an error instead of "not found"
 
