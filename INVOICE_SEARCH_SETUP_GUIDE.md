@@ -1,23 +1,30 @@
 # Proforma Invoice Search — Setup Guide
 
 One-time setup to turn on the "🧾 Invoice Search" button in the topbar,
-which lets an ASM look up a Proforma Invoice PDF by Sales Order Number and
-View/Download it.
+which lets an ASM look up a Proforma Invoice PDF by Order Number, Customer
+Name, or Date, and View/Download it.
 
 ## What you're setting up
 
 ```
-ASM types an Order Number into the app
+ASM types an Order Number, Customer Name, or Date into the app
   →  index.html ("🧾 Invoice Search" button)
   →  apps-script/InvoiceSearch.gs (Web App)
-  →  the Drive folder where invoices are saved
-  →  index.html shows View / Download for the matching PDF
+  →  the Order History sheet (to find which orders match) +
+     the Drive folder where invoices are saved (to find each one's PDF)
+  →  index.html shows a card per matching order, with View / Download
+     when that order's invoice PDF exists
 ```
 
 **This app never creates, uploads, or emails the invoice.** That stays
 exactly as it is today — you (or whoever prepares Proforma Invoices) save
 the finished PDF into one Drive folder, named after the Order Number. This
-feature only searches that folder and hands back a link.
+feature only searches Order History + that folder and hands back links.
+
+A Customer Name or Date search can match several orders at once — each
+shows as its own card, and one without an invoice yet still shows (with a
+plain "No invoice uploaded yet" note) so an ASM can see every one of that
+customer's orders, not just the ones already invoiced.
 
 ## Naming convention — this is the only rule that matters
 
@@ -49,7 +56,13 @@ name must match the Order Number exactly — no extra spaces, no "(1)", no
    [`apps-script/InvoiceSearch.gs`](apps-script/InvoiceSearch.gs) from this
    repo.
 3. In `CONFIG.INVOICE_FOLDER_ID`, paste the folder ID from Step 1.
-4. Save the project (give it a name like "MyFitness Invoice Search").
+4. In `CONFIG.ORDER_HISTORY_SPREADSHEET_ID`, paste the ID of the same
+   spreadsheet the order-logging Web App writes to (its "Order History"
+   tab) — open that spreadsheet and copy the ID out of its URL
+   (`.../spreadsheets/d/`**`THIS_PART`**`/edit`). This is what makes
+   Customer Name and Date search work; Order Number search alone would
+   still work without it, checking the Drive folder directly.
+5. Save the project (give it a name like "MyFitness Invoice Search").
 
 ## Step 3 — Deploy as a Web App
 
@@ -81,14 +94,28 @@ sharing) so the ASM's browser can open it without signing in. Every other
 file in the folder — including invoices no one has searched for yet —
 stays exactly as private as it already was.
 
-## If a search comes back "No invoice found" but you know the PDF is there
+## Accepted date formats
 
-Almost always a filename mismatch — check:
-- The file is a `.pdf` (not `.docx`, `.jpg`, a Drive-native Doc, etc.)
-- The name (minus `.pdf`) matches the Order Number exactly — copy-paste the
-  Order Number from the app rather than retyping it, to rule out a typo.
-- The file is actually inside the configured folder, not a subfolder or a
-  shortcut elsewhere in Drive.
+Typing a date searches for every order placed that day. Any of these work:
+`2026-09-08`, `08-09-2026`, `08/09/2026`, or `08-Sep-2026` (the exact format
+shown elsewhere in the app). Anything that doesn't match one of these
+patterns is treated as a Customer Name search instead, never an error.
+
+## If a search comes back "No orders found" but you know the order exists
+
+- For a Customer Name search: it only matches Order History's own
+  `Customer Name` column, so it can only find orders already logged there
+  — an order submitted before the order-logging Web App was working won't
+  show up this way (Order Number search still finds its invoice directly,
+  independent of the sheet).
+- For a Date search: double check the format against the list above.
+- For an Order Number search: almost always a filename mismatch — check:
+  - The file is a `.pdf` (not `.docx`, `.jpg`, a Drive-native Doc, etc.)
+  - The name (minus `.pdf`) matches the Order Number exactly — copy-paste
+    the Order Number from the app rather than retyping it, to rule out a
+    typo.
+  - The file is actually inside the configured folder, not a subfolder or
+    a shortcut elsewhere in Drive.
 
 ## If the app shows an error instead of "not found"
 
