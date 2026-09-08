@@ -845,6 +845,13 @@
         <button class="summary-btn" id="inventoryBtn" title="Inventory">📦</button>
         <span class="hdr-action-label">Inventory</span>
       </div>
+      <!-- Hidden until INVOICE_SEARCH_WEBAPP_URL is configured — see
+           INVOICE_SEARCH_SETUP_GUIDE.md — same "no button that fails on
+           every tap" reasoning as the Image Scan button. -->
+      <div class="hdr-action" id="invoiceSearchAction" hidden>
+        <button class="summary-btn" id="invoiceSearchBtn" title="Invoice Search">🧾</button>
+        <span class="hdr-action-label">Invoice</span>
+      </div>
     </div>
   </div>
 
@@ -892,6 +899,28 @@
         <div class="inv-admin">
           <button class="btn btn-outline" id="btnSyncInventoryNow">🔄 Sync Inventory Now</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invoice Search overlay: read-only lookup of a Proforma Invoice PDF by
+       Sales Order Number in a designated Google Drive folder — the invoice
+       itself is created and saved there separately, outside this app (see
+       INVOICE_SEARCH_SETUP_GUIDE.md). Reuses the same history-overlay/
+       history-sheet shell as History/Summary/Inventory above so it looks
+       native to the app rather than introducing a new pattern. -->
+  <div class="history-overlay hidden" id="invoiceSearchOverlay">
+    <div class="history-sheet">
+      <div class="history-head">
+        <h3>Invoice Search</h3>
+        <button type="button" class="history-close" id="invoiceSearchClose" title="Close">✕</button>
+      </div>
+      <div class="history-body" id="invoiceSearchBody">
+        <div class="field" style="margin-bottom:10px;">
+          <input type="text" id="invoiceOrderNoInput" placeholder="🔍 Enter Sales Order Number (e.g. SO-2026-00125)" autocomplete="off">
+        </div>
+        <button type="button" class="btn btn-outline" id="invoiceSearchGo" style="width:100%;">Search</button>
+        <div id="invoiceSearchResult" style="margin-top:14px;"></div>
       </div>
     </div>
   </div>
@@ -1203,6 +1232,17 @@ const UNMATCHED_SKU_URL = "";
 // on every tap is worse than no button.
 const IMAGE_SCAN_WEBAPP_URL = "";
 
+// Proforma Invoice Search — see INVOICE_SEARCH_SETUP_GUIDE.md for one-time
+// setup (deploying apps-script/InvoiceSearch.gs as its own Web App against
+// the Drive folder where Proforma Invoice PDFs are saved, one per Sales
+// Order Number). This app never generates or uploads the invoice itself —
+// that's done separately, outside this app, by naming the PDF exactly
+// "<Order Number>.pdf" in that folder — the Invoice Search overlay is a
+// read-only lookup against it. Leave blank to keep the Invoice topbar
+// button hidden entirely, same "no button that fails on every tap"
+// reasoning as IMAGE_SCAN_WEBAPP_URL above.
+const INVOICE_SEARCH_WEBAPP_URL = "";
+
 // When true, a line whose quantity exceeds Remaining Inventory is REJECTED
 // (blocking) instead of just shown as an advisory warning in the Add-to-
 // Order panel. Defaults to false so existing order-booking behavior is
@@ -1378,6 +1418,8 @@ const els = {};
  'historyBtn','summaryBtn','historyOverlay','historyBody','historyClose','historyTitle',
  'inventoryBtn','inventoryOverlay','inventoryClose','invSyncStatus','invSearch','invTableBody','invTableHeadRow',
  'invUnmatchedToggle','invUnmatchedBody','btnSyncInventoryNow',
+ 'invoiceSearchAction','invoiceSearchBtn','invoiceSearchOverlay','invoiceSearchClose','invoiceSearchBody',
+ 'invoiceOrderNoInput','invoiceSearchGo','invoiceSearchResult',
  'marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
  'productSearch','comboResults','salesChannelHint',
  'imgScanRow','btnImgScan','imgScanFile','imgScanStatus','imgScanResults',
@@ -2369,6 +2411,102 @@ if(els.btnSyncInventoryNow){
       els.btnSyncInventoryNow.textContent = original;
     }
   });
+}
+
+// ============================================================================
+// INVOICE SEARCH — read-only lookup of a Proforma Invoice PDF by Sales Order
+// Number in a designated Google Drive folder (see INVOICE_SEARCH_SETUP_GUIDE.md
+// and apps-script/InvoiceSearch.gs). The PDF itself is created and saved
+// there separately, outside this app — this is purely a search/view/download
+// convenience, so it can never affect order booking itself even if it's
+// unconfigured, misconfigured, or the backing Web App is down.
+// ============================================================================
+
+// Hidden entirely until INVOICE_SEARCH_WEBAPP_URL is configured — a button
+// that fails on every tap is worse than no button (same reasoning as the
+// Image Scan button).
+if(INVOICE_SEARCH_WEBAPP_URL && els.invoiceSearchAction){
+  els.invoiceSearchAction.hidden = false;
+}
+
+function renderInvoiceSearchResult(html){
+  if(els.invoiceSearchResult) els.invoiceSearchResult.innerHTML = html;
+}
+
+function openInvoiceSearchOverlay(){
+  els.invoiceSearchOverlay.classList.remove('hidden');
+  els.invoiceOrderNoInput.value = '';
+  renderInvoiceSearchResult('');
+  // Slight delay — focusing immediately on the same tap that opened the
+  // overlay can get swallowed by the overlay's own fade-in on some mobile
+  // browsers, same reasoning as resetForm()'s focus on Customer Name.
+  setTimeout(()=>els.invoiceOrderNoInput.focus(), 50);
+}
+function closeInvoiceSearchOverlay(){
+  els.invoiceSearchOverlay.classList.add('hidden');
+}
+if(els.invoiceSearchBtn){
+  els.invoiceSearchBtn.addEventListener('click', openInvoiceSearchOverlay);
+  els.invoiceSearchClose.addEventListener('click', closeInvoiceSearchOverlay);
+  els.invoiceSearchOverlay.addEventListener('click', (e)=>{
+    if(e.target === els.invoiceSearchOverlay) closeInvoiceSearchOverlay();
+  });
+  els.invoiceSearchGo.addEventListener('click', runInvoiceSearch);
+  els.invoiceOrderNoInput.addEventListener('keydown', (e)=>{
+    // Enter submits the search — an ASM typing an Order Number on a phone
+    // shouldn't have to reach for the Search button every time.
+    if(e.key === 'Enter'){ e.preventDefault(); runInvoiceSearch(); }
+  });
+}
+
+async function runInvoiceSearch(){
+  const orderNo = normSpace(els.invoiceOrderNoInput.value);
+  if(!orderNo){
+    toast('Enter a Sales Order Number to search');
+    return;
+  }
+  if(!INVOICE_SEARCH_WEBAPP_URL){
+    renderInvoiceSearchResult(`<div class="history-empty">Invoice Search isn't set up yet — see INVOICE_SEARCH_SETUP_GUIDE.md</div>`);
+    return;
+  }
+
+  els.invoiceSearchGo.disabled = true;
+  const original = els.invoiceSearchGo.textContent;
+  els.invoiceSearchGo.textContent = 'Searching…';
+  renderInvoiceSearchResult(`<div class="history-empty">Searching…</div>`);
+
+  try{
+    const res = await fetch(INVOICE_SEARCH_WEBAPP_URL, { method:'POST', body: JSON.stringify({ orderNo }) });
+    const result = await res.json().catch(()=>({}));
+
+    if(result.error){
+      renderInvoiceSearchResult(`<div class="history-empty">${escapeHtml(result.error)}</div>`);
+    } else if(result.found){
+      const sizeLabel = result.sizeBytes ? `${Math.max(1, Math.round(result.sizeBytes/1024))} KB` : '';
+      const updatedLabel = result.lastUpdated
+        ? new Date(result.lastUpdated).toLocaleString('en-IN', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})
+        : '';
+      renderInvoiceSearchResult(`
+        <div class="history-detail">
+          <div class="history-order-heading">🧾 ${escapeHtml(result.fileName || (orderNo + '.pdf'))}</div>
+          <div class="rr"><span>Order No</span><span>${escapeHtml(result.orderNo || orderNo)}</span></div>
+          ${sizeLabel ? `<div class="rr"><span>File Size</span><span>${sizeLabel}</span></div>` : ''}
+          ${updatedLabel ? `<div class="rr"><span>Last Updated</span><span>${escapeHtml(updatedLabel)}</span></div>` : ''}
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <a class="btn btn-outline" style="flex:1; text-align:center; text-decoration:none;" href="${result.viewUrl}" target="_blank" rel="noopener">👁 View</a>
+            <a class="btn btn-outline" style="flex:1; text-align:center; text-decoration:none;" href="${result.downloadUrl}" target="_blank" rel="noopener">⬇ Download</a>
+          </div>
+        </div>`);
+    } else {
+      renderInvoiceSearchResult(`<div class="history-empty">No invoice found for Order Number "${escapeHtml(result.orderNo || orderNo)}" yet.<br>Double-check the number, or it may not be uploaded yet.</div>`);
+    }
+  } catch(err){
+    console.error('Invoice search failed:', err);
+    renderInvoiceSearchResult(`<div class="history-empty">Couldn't reach Invoice Search — check your connection and try again.</div>`);
+  } finally {
+    els.invoiceSearchGo.disabled = false;
+    els.invoiceSearchGo.textContent = original;
+  }
 }
 
 function activeChannelKey(){
