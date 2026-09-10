@@ -4045,27 +4045,50 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   let sheetOk = true;
   try{ await postToSheet(payload); } catch(err){ sheetOk = false; console.error('Sheet sync failed', err); }
 
-  // Step C: open WhatsApp directly with the order details as the message
-  // text — no OS share-sheet/app-picker in between, so the very next thing
-  // the rep sees is WhatsApp itself (a contact/group picker inside
-  // WhatsApp, ready for them to pick who to send to and tap Send). This
-  // runs LAST, on purpose — see the comment on Step A above.
+  // Step C: hand the real CSV file to the OS share sheet (navigator.share
+  // with `files`) so the rep can pick WhatsApp and have the actual .csv
+  // attached to the chat — not just text. This is the one thing the old
+  // direct-to-wa.me link could never do (wa.me only ever pre-fills text,
+  // it has no way to attach a file), and getting a real file into the chat
+  // is the whole point here, so the extra share-sheet tap is worth it.
   //
-  // The order CSV can't be attached as a real file this way (that needed
-  // navigator.share's OS-level file hand-off, which is exactly the extra
-  // app-picker step being skipped here) — it's downloaded to the device
-  // instead, and every detail is also already embedded as text inside the
-  // WhatsApp message itself (buildWhatsAppMessage — see its own comment),
-  // so nothing is missing from the chat even without the file attached.
-  const message = buildWhatsAppMessage(payload);
+  // Falls back to the old direct-link behavior (silent CSV download +
+  // wa.me text, CSV data also inlined as text in the message) only when
+  // the browser can't share files at all — e.g. desktop Chrome, or an
+  // older mobile browser. If the rep opens the share sheet and backs out
+  // of it (AbortError), that's a deliberate choice not to send right now:
+  // we still save the CSV to their device as a safety net, but we do NOT
+  // silently open WhatsApp's text-only flow behind their back.
   const csvBlob = buildCsvBlob(payload);
   const fileName = orderFileName(payload);
+  const csvFile = new File([csvBlob], fileName, {type:'text/csv'});
+  const canShareFile = !!(navigator.canShare && navigator.canShare({files:[csvFile]}));
 
-  downloadBlob(csvBlob, fileName);
-  const waUrl = WHATSAPP_NUMBER
-    ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
-    : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-  window.open(waUrl, '_blank');
+  let handled = false;
+  if(canShareFile){
+    try{
+      await navigator.share({
+        files: [csvFile],
+        text: buildWhatsAppMessage(payload, {includeCsv:false})
+      });
+      handled = true;
+    } catch(err){
+      if(err && err.name === 'AbortError'){
+        downloadBlob(csvBlob, fileName);
+        handled = true;
+      }
+      // any other error falls through to the direct-link fallback below
+    }
+  }
+
+  if(!handled){
+    const message = buildWhatsAppMessage(payload);
+    downloadBlob(csvBlob, fileName);
+    const waUrl = WHATSAPP_NUMBER
+      ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank');
+  }
 
   btn.textContent = original; btn.disabled = false;
   state.isSubmitting = false;
