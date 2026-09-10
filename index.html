@@ -357,6 +357,15 @@
 
   /* ---------------- Product search / combobox ---------------- */
   .combo{ position:relative; }
+  #customerName{ padding-right:34px; }
+  .combo-clear-btn{
+    position:absolute; top:50%; right:8px; transform:translateY(-50%);
+    width:24px; height:24px; border:none; border-radius:50%;
+    background:transparent; color:var(--muted); font-size:18px; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    padding:0;
+  }
+  .combo-clear-btn:hover{ background:#eef2f5; color:var(--ink); }
   .combo-results{
     /* left/right extend past .combo's own edges out to the CARD's outer
        edge (matching .card's 14px padding, see there) rather than just
@@ -985,6 +994,7 @@
           <label>Customer Name <span class="opt">(search saved buyers or type a new name)</span></label>
           <div class="combo">
             <input id="customerName" type="text" placeholder="Search buyer name or city… or type a new customer name" autocomplete="off" required>
+            <button type="button" id="customerNameClearBtn" class="combo-clear-btn" aria-label="Clear customer name" hidden>&times;</button>
             <div class="combo-results" id="buyerResults" hidden></div>
           </div>
         </div>
@@ -1425,7 +1435,7 @@ const state = {
 };
 
 const els = {};
-['orderNo','orderNoHint','customerName','buyerResults','salesChannel',
+['orderNo','orderNoHint','customerName','customerNameClearBtn','buyerResults','salesChannel',
  'historyBtn','summaryBtn','historyOverlay','historyBody','historyClose','historyTitle',
  'inventoryBtn','inventoryOverlay','inventoryClose','invSyncStatus','invSearch','invTableBody','invTableHeadRow',
  'invUnmatchedToggle','invUnmatchedBody','btnSyncInventoryNow',
@@ -3235,12 +3245,32 @@ function lockSalesChannelTo(channel, exempt){
   }
 }
 
+// Shows the X button only once there's something to clear — an empty
+// field has nothing worth a clear action, and showing it anyway would just
+// sit there overlapping the placeholder text.
+function updateCustomerClearBtn(){
+  if(els.customerNameClearBtn) els.customerNameClearBtn.hidden = !els.customerName.value;
+}
+
+els.customerNameClearBtn.addEventListener('click', ()=>{
+  els.customerName.value = '';
+  els.buyerResults.hidden = true; els.buyerResults.innerHTML = '';
+  // Same as typing the name away by hand (see the 'input' listener below) —
+  // unlock Sales Channel rather than leaving it locked/disabled against a
+  // customer that's no longer selected.
+  unlockSalesChannel();
+  updateCustomerClearBtn();
+  renderCart();
+  els.customerName.focus();
+});
+
 els.customerName.addEventListener('input', ()=>{
   // Typing edits the name away from whichever buyer was last selected (if
   // any) — unlock Sales Channel immediately rather than leaving it stuck
   // disabled against a customer that may no longer be the one being
   // searched for. It re-locks on its own if/when a suggestion is clicked.
   unlockSalesChannel();
+  updateCustomerClearBtn();
   // Keeps the status line's "what's still missing" message (see
   // renderCart) live while typing a brand-new customer name, not just
   // when a saved-buyer suggestion is clicked — a rep typing a new
@@ -3273,6 +3303,7 @@ els.buyerResults.addEventListener('click', (e)=>{
   if(!item || !item.dataset.buyer) return;
   els.customerName.value = item.dataset.buyer;
   els.buyerResults.hidden = true;
+  updateCustomerClearBtn();
   // Auto-fill Sales Channel from the Customer Master, same as picking it
   // by hand — dispatching 'change' (not just setting .value) so the
   // existing channel-switch handler still clears any stale cart lines and
@@ -4136,6 +4167,7 @@ function resetForm(){
   hideSelfCopyBanner();
   els.orderNo.value = getNextOrderNo();
   els.customerName.value='';
+  updateCustomerClearBtn();
   els.salesChannel.value='';
   els.productSearch.value = ''; els.comboResults.innerHTML=''; els.comboResults.hidden = true;
   closeAddPanel();
@@ -4599,6 +4631,7 @@ function loadOrderIntoWizard(order){
 
   els.orderNo.value = order.orderNo || getNextOrderNo();
   els.customerName.value = order.customerName || '';
+  updateCustomerClearBtn();
   els.salesChannel.value = order.salesChannel || '';
   els.salesChannel.dispatchEvent(new Event('change'));
   // order.location is no longer restored — Fulfilment Location was removed
