@@ -3838,16 +3838,11 @@ function buildWhatsAppMessage(payload, opts){
     rejected.forEach(l=> msg += `- ${l.style}: ${l.reason}\n`);
   }
   // The order CSV, inline as text (WhatsApp's ```…``` renders it monospace)
-  // — but ONLY when includeCsv is on. The Submit handler passes
-  // includeCsv:false for the copy of the message it hands to
-  // navigator.share() alongside the real attached file: that text becomes
-  // the file's CAPTION in WhatsApp, and a long caption (order details +
-  // the full CSV rows again, redundant with the file itself) was pushing
-  // WhatsApp to split the share into two separate messages instead of one
-  // file-with-caption. The full version (CSV included) is still used for
-  // the no-file-support fallback and the "send yourself a copy" feature,
-  // neither of which ever attaches a real file — there the CSV text is the
-  // only copy of that data that reaches WhatsApp at all.
+  // — but ONLY when includeCsv is on. Every current call site leaves it on
+  // (the Submit handler always opens WhatsApp with just the message text,
+  // no real file attached — see Step C below — so this is the only copy of
+  // the CSV data that reaches WhatsApp at all). The opts.includeCsv:false
+  // path stays available for a caption-style use if one comes back later.
   if(accepted.length && includeCsv){
     msg += `\n*Order CSV (DOFSOSKU format):*\n\`\`\`\n${buildCsvText(payload)}\n\`\`\`\n`;
   }
@@ -3917,7 +3912,7 @@ async function postToSheet(payload){
 // ============================================================================
 document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   // Guard #1: ignore a second tap that lands while the first submission is
-  // still in flight (network round-trip to the sheet, native share sheet, etc).
+  // still in flight (network round-trip to the sheet, opening WhatsApp, etc).
   if(state.isSubmitting) return;
 
   // Guard #2: every required field on the page.
@@ -3985,18 +3980,17 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   const original = btn.textContent;
   btn.textContent = 'Submitting…'; btn.disabled = true;
 
-  // Step A: record this order as submitted BEFORE handing off to WhatsApp's
-  // native share sheet below — deliberately in this order, not after.
-  // Tapping Share hands control to the OS; on a lot of Android phones that
-  // backgrounds (and on low-memory phones, can even get the browser tab/PWA
-  // killed while WhatsApp is in the foreground). Anything that only ran
-  // *after* navigator.share() resolved could silently never run at all —
-  // which is exactly why a submitted order could go out over WhatsApp fine
-  // and still never show up in Order History. Recording it here, first,
-  // means the order is already safely logged (duplicate-guard, the local
-  // Order History list, and the Order History Google Sheet) before that
-  // handoff happens, regardless of what the OS does with the share sheet
-  // afterward.
+  // Step A: record this order as submitted BEFORE opening WhatsApp below —
+  // deliberately in this order, not after. Opening WhatsApp hands control
+  // to the OS; on a lot of Android phones that backgrounds (and on
+  // low-memory phones, can even get the browser tab/PWA killed while
+  // WhatsApp is in the foreground). Anything that only ran *after* that
+  // handoff could silently never run at all — which is exactly why a
+  // submitted order could go out over WhatsApp fine and still never show
+  // up in Order History. Recording it here, first, means the order is
+  // already safely logged (duplicate-guard, the local Order History list,
+  // and the Order History Google Sheet) before that handoff happens,
+  // regardless of what the OS does with WhatsApp afterward.
   // Only record the order number as "submitted" if it isn't already —
   // editing an existing order re-submits an Order No that's already in
   // this set, and pushing it again would just pile up a harmless but
@@ -4042,64 +4036,27 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   let sheetOk = true;
   try{ await postToSheet(payload); } catch(err){ sheetOk = false; console.error('Sheet sync failed', err); }
 
-  // Step C: open WhatsApp with the order details (native share sheet with
-  // the CSV attached as a real file, when the phone/browser supports it;
-  // otherwise a CSV download + plain wa.me link). This runs LAST, on
-  // purpose — see the comment on Step A above.
+  // Step C: open WhatsApp directly with the order details as the message
+  // text — no OS share-sheet/app-picker in between, so the very next thing
+  // the rep sees is WhatsApp itself (a contact/group picker inside
+  // WhatsApp, ready for them to pick who to send to and tap Send). This
+  // runs LAST, on purpose — see the comment on Step A above.
   //
-  // The order CSV is ALSO always embedded as text inside the message itself
-  // (buildWhatsAppMessage already does this — see its comment) regardless
-  // of whether the file attach below succeeds — so the data is always
-  // right there and copy-pasteable in the chat even on a phone/browser
-  // combination where file-sharing silently isn't supported, without
-  // depending on native file-attach working. The file attach is still
-  // attempted on top of that for phones that DO support it, since reps
-  // need an actual .csv file they can forward/import, not just message
-  // text — accepting that the OS's "allow access to photos and media"
-  // permission prompt is an inherent, one-time part of real file-sharing
-  // via the browser (not something removable while still attaching a
-  // real file), not a bug.
-  // Two versions of the message: the full one (CSV rows included as text)
-  // is what "Send yourself a copy" uses and what goes out when there's no
-  // file attached at all — the only copy of that data reaching WhatsApp in
-  // that case. When the file DOES attach successfully, no message/caption
-  // is sent at all — the CSV itself now has every detail needed, so a
-  // separate text message would just be redundant.
+  // The order CSV can't be attached as a real file this way (that needed
+  // navigator.share's OS-level file hand-off, which is exactly the extra
+  // app-picker step being skipped here) — it's downloaded to the device
+  // instead, and every detail is also already embedded as text inside the
+  // WhatsApp message itself (buildWhatsAppMessage — see its own comment),
+  // so nothing is missing from the chat even without the file attached.
   const message = buildWhatsAppMessage(payload);
   const csvBlob = buildCsvBlob(payload);
   const fileName = orderFileName(payload);
 
-  let shareOutcome = 'shared'; // 'shared' | 'downloaded' | 'cancelled'
-  try{
-    const file = new File([csvBlob], fileName, {type:'text/csv'});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({ files:[file], title:'MyFitness Order' });
-      shareOutcome = 'shared';
-    } else {
-      shareOutcome = 'downloaded';
-      downloadBlob(csvBlob, fileName);
-      const waUrl = WHATSAPP_NUMBER
-        ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
-        : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-      window.open(waUrl, '_blank');
-    }
-  } catch(err){
-    if(err && err.name === 'AbortError'){
-      // rep cancelled the native share sheet — the order still counts as
-      // submitted (already recorded in Step A above regardless of what
-      // happens here). The full message text (with the CSV embedded) is
-      // still available via "Send yourself a copy" below.
-      shareOutcome = 'cancelled';
-    } else {
-      console.error(err);
-      shareOutcome = 'downloaded';
-      downloadBlob(csvBlob, fileName);
-      const waUrl = WHATSAPP_NUMBER
-        ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
-        : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-      window.open(waUrl, '_blank');
-    }
-  }
+  downloadBlob(csvBlob, fileName);
+  const waUrl = WHATSAPP_NUMBER
+    ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
+    : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+  window.open(waUrl, '_blank');
 
   btn.textContent = original; btn.disabled = false;
   state.isSubmitting = false;
@@ -4112,22 +4069,13 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   const verb = isEditingThisOrder ? 'updated' : 'submitted';
   resetForm();
 
-  // Build the final status toast from what ACTUALLY happened (shareOutcome
-  // + sheetOk) rather than always reporting plain success — a fallback-
-  // download order would otherwise look identical to a fully-automatic one.
-  let statusMsg;
-  if(shareOutcome === 'cancelled'){
-    statusMsg = `Order ${submittedOrderNo} ${verb}, but the WhatsApp share was cancelled before sending. Use "Send yourself a copy" below, or tap Submit again to resend it.`;
-  } else {
-    statusMsg = `✅ Order ${submittedOrderNo} ${verb} successfully`;
-    if(shareOutcome === 'downloaded'){
-      statusMsg += ` — CSV "${fileName}" was saved to your device (the order details/CSV text are still in the WhatsApp message). Attach it yourself if needed; this phone/browser can't attach files automatically.`;
-    }
-    if(!sheetOk){
-      statusMsg += ' (sheet sync failed, but WhatsApp/CSV still went out)';
-    }
+  // Build the final status toast from what ACTUALLY happened (sheetOk)
+  // rather than always reporting plain success.
+  let statusMsg = `✅ Order ${submittedOrderNo} ${verb} successfully — CSV "${fileName}" was saved to your device (the order details are also in the WhatsApp message text). Attach the file in WhatsApp yourself if you want to send it too.`;
+  if(!sheetOk){
+    statusMsg += ' (sheet sync failed, but WhatsApp/CSV still went out)';
   }
-  toast(statusMsg, (shareOutcome === 'shared' && sheetOk) ? 2600 : 7000);
+  toast(statusMsg, 7000);
   // Offer the rep their own copy of the exact same item/SKU/total details,
   // on WhatsApp, for personal reference — see showSelfCopyBanner() above
   // for why this is a tap-to-send button rather than an auto-opened
