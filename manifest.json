@@ -1,7 +1,7 @@
 {
-  "name": "FitFlow Order Booking",
-  "short_name": "FitFlow Orders",
-  "description": "FitFlow Order Booking App",
+  "name": "MyFitness Order Booking",
+  "short_name": "MyFitness Orders",
+  "description": "MyFitness Order Booking App",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#00AEEF">
-<meta name="description" content="FitFlow Order Booking App">
+<meta name="description" content="MyFitness Order Booking App">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="FitFlow Orders">
+<meta name="apple-mobile-web-app-title" content="MyFitness Orders">
 <link rel="manifest" href="manifest.json">
 <!-- Real PNG icon files (see icon-192.png / icon-512.png in this folder) —
      used instead of inline SVG data-URIs because several Android/iOS
@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>FitFlow — Order Booking</title>
+<title>MyFitness — Order Booking</title>
 <style>
   :root{
     --blue:#00AEEF;
@@ -63,13 +63,16 @@
   .topbar .brand .sep{ opacity:.6; margin:0 4px; font-weight:400; }
   /* Monogram badge PNG has true alpha transparency and its own gradient/
      corner-radius baked in, so it sits directly on the topbar's blue
-     gradient with no background pill needed. Badge doubles as the "F" —
-     "itFlow" sits right after it with a slight negative margin so the
-     two fuse into a single wordmark instead of reading as icon + label. */
+     gradient with no background pill needed. It's a standalone mark
+     (an "M" monogram) rather than a literal first letter, so the
+     wordmark beside it spells the full name — same pattern as an app
+     icon next to its app name, not a fused lockup. */
   .topbar .brand-logo{
-    height:34px; width:34px; display:inline-block; margin-right:-4px;
+    height:34px; width:34px; display:inline-block; margin-right:8px;
   }
-  .topbar .brand-word{ font-weight:800; font-size:20px; color:#fff; letter-spacing:.2px; }
+  .topbar .brand-word{ font-weight:800; font-size:20px; letter-spacing:.2px; }
+  .topbar .brand-word-my{ color:#FFB27A; }
+  .topbar .brand-word-fitness{ color:#fff; }
   .topbar .subbrand{ font-size:11.5px; opacity:.9; margin-top:2px; }
 
   /* Shared round topbar-icon look for the Order History/Order Summary/
@@ -838,7 +841,7 @@
 
   <div class="topbar">
     <div class="topbar-center">
-      <div class="brand" role="img" aria-label="FitFlow"><img src="icon-512.png" alt="" class="brand-logo"><span class="brand-word" aria-hidden="true">itFlow</span></div>
+      <div class="brand" role="img" aria-label="MyFitness"><img src="icon-512.png" alt="" class="brand-logo"><span class="brand-word" aria-hidden="true"><span class="brand-word-my">My</span><span class="brand-word-fitness">Fitness</span></span></div>
     </div>
     <div class="hdr-actions">
       <div class="hdr-action">
@@ -3822,7 +3825,7 @@ function buildWhatsAppMessage(payload, opts){
   const accepted = payload.lines.filter(l=>l.validation==='Accepted');
   const rejected = payload.lines.filter(l=>l.validation==='REJECTED');
 
-  let msg = `🧾 *FitFlow Order Booking*\n`;
+  let msg = `🧾 *MyFitness Order Booking*\n`;
   msg += `Order No: ${payload.orderNo||'-'}\n`;
   msg += `Customer: ${payload.customerName||'-'}\n`;
   msg += `Sales Channel: ${payload.salesChannel||'-'}\n`;
@@ -3854,7 +3857,7 @@ function buildWhatsAppMessage(payload, opts){
   if(accepted.length && includeCsv){
     msg += `\n*Order CSV (DOFSOSKU format):*\n\`\`\`\n${buildCsvText(payload)}\n\`\`\`\n`;
   }
-  msg += `\nGenerated via FitFlow Order Booking Form`;
+  msg += `\nGenerated via MyFitness Order Booking Form`;
   return msg;
 }
 
@@ -4096,7 +4099,7 @@ document.getElementById('btnEmail').addEventListener('click', ()=>{
   const payload = buildOrderPayload();
   if(payload.lines.length===0){ toast('Add at least one product first'); return; }
   const message = buildWhatsAppMessage(payload).replace(/\*/g,'');
-  const subject = `FitFlow Order ${payload.orderNo||''} - ${payload.customerName||''}`;
+  const subject = `MyFitness Order ${payload.orderNo||''} - ${payload.customerName||''}`;
   window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
 });
 
