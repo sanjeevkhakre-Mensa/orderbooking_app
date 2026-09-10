@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#00AEEF">
-<meta name="description" content="MyFitness Pro.Fitness Order Booking App">
+<meta name="description" content="FitFlow Order Booking App">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="MyFitness Orders">
+<meta name="apple-mobile-web-app-title" content="FitFlow Orders">
 <link rel="manifest" href="manifest.json">
 <!-- Real PNG icon files (see icon-192.png / icon-512.png in this folder) —
      used instead of inline SVG data-URIs because several Android/iOS
@@ -17,7 +17,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>MyFitness | Pro.Fitness — Order Booking</title>
+<title>FitFlow — Order Booking</title>
 <style>
   :root{
     --blue:#00AEEF;
@@ -829,7 +829,7 @@
 
   <div class="topbar">
     <div class="topbar-center">
-      <div class="brand">MYFITNESS <span class="sep">|</span> PRO.FITNESS</div>
+      <div class="brand">FITFLOW</div>
       <div class="subbrand">Tanvi Fitness Pvt. Ltd. · Order Booking</div>
     </div>
     <div class="hdr-actions">
@@ -3814,7 +3814,7 @@ function buildWhatsAppMessage(payload, opts){
   const accepted = payload.lines.filter(l=>l.validation==='Accepted');
   const rejected = payload.lines.filter(l=>l.validation==='REJECTED');
 
-  let msg = `🧾 *MyFitness Order Booking*\n`;
+  let msg = `🧾 *FitFlow Order Booking*\n`;
   msg += `Order No: ${payload.orderNo||'-'}\n`;
   msg += `Customer: ${payload.customerName||'-'}\n`;
   msg += `Sales Channel: ${payload.salesChannel||'-'}\n`;
@@ -3846,7 +3846,7 @@ function buildWhatsAppMessage(payload, opts){
   if(accepted.length && includeCsv){
     msg += `\n*Order CSV (DOFSOSKU format):*\n\`\`\`\n${buildCsvText(payload)}\n\`\`\`\n`;
   }
-  msg += `\nGenerated via MyFitness Order Booking Form`;
+  msg += `\nGenerated via FitFlow Order Booking Form`;
   return msg;
 }
 
@@ -4088,7 +4088,7 @@ document.getElementById('btnEmail').addEventListener('click', ()=>{
   const payload = buildOrderPayload();
   if(payload.lines.length===0){ toast('Add at least one product first'); return; }
   const message = buildWhatsAppMessage(payload).replace(/\*/g,'');
-  const subject = `MyFitness Order ${payload.orderNo||''} - ${payload.customerName||''}`;
+  const subject = `FitFlow Order ${payload.orderNo||''} - ${payload.customerName||''}`;
   window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
 });
 
