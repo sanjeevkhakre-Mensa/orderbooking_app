@@ -3749,17 +3749,26 @@ function formatScanIdentifier(ean){
 function buildCsvRows(payload){
   const headers = [
     'Scan Identifier', 'Ordered Qty', 'Price Type', 'Price', 'PO Qty',
-    'Order No', 'Order Date', 'Sales Channel', 'Style / SKU Code', 'MRP',
-    'Unit Price (Excl. GST)', 'GST Amount', 'Line Item Total'
+    'Order No', 'Order Date', 'Customer Name', 'Sales Channel', 'Style / SKU Code', 'MRP',
+    'Unit Price (Excl. GST)', 'GST Amount', 'Line Item Total', 'Warehouse Name', 'Available Inventory'
   ];
   const rows = [headers];
   const orderDate = payload.submittedAt ? formatHistoryDate(payload.submittedAt) : '';
 
+  // Same warehouse scoping as everywhere else (search badges, Add-to-Order
+  // panel, Inventory overlay) — see CHANNEL_WAREHOUSES/warehousesForCustomer.
+  // One warehouse set per order (it only depends on the customer, not the
+  // line), but Available Inventory is still looked up per SKU since that
+  // does vary line to line.
+  const scopeWarehouses = warehousesForCustomer(payload.customerName);
+  const warehouseName = scopeWarehouses ? scopeWarehouses.map(w=>WAREHOUSE_LABELS[w]).join(' + ') : 'All Locations';
+
   payload.lines.filter(l=>l.validation==='Accepted').forEach(l=>{
+    const available = scopedAvailableStock(l.style, payload.customerName);
     rows.push([
       formatScanIdentifier(l.ean), l.qty, l.priceType, l.exportPrice, l.qty,
-      payload.orderNo || '', orderDate, payload.salesChannel || '', l.style || '', l.mrp || '',
-      l.unitPrice, l.gstAmount, l.lineTotal
+      payload.orderNo || '', orderDate, payload.customerName || '', payload.salesChannel || '', l.style || '', l.mrp || '',
+      l.unitPrice, l.gstAmount, l.lineTotal, warehouseName, available === null ? '' : available
     ]);
   });
 
