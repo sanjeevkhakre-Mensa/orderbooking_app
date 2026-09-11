@@ -4089,6 +4089,14 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   // it has no way to attach a file), and getting a real file into the chat
   // is the whole point here, so the extra share-sheet tap is worth it.
   //
+  // Deliberately files-only, no `text` alongside it — sharing a file AND
+  // text together in one navigator.share() call is exactly what made
+  // WhatsApp stop showing up as a target app on some Android/WhatsApp
+  // versions (it registers a share target for "file only" and for "text
+  // only" as separate intent filters, not the combined case with both
+  // EXTRA_STREAM and EXTRA_TEXT set). Dropping text fixes that; the rep
+  // types/pastes any note directly in WhatsApp after picking it.
+  //
   // Falls back to the old direct-link behavior (silent CSV download +
   // wa.me text, CSV data also inlined as text in the message) only when
   // the browser can't share files at all — e.g. desktop Chrome, or an
@@ -4104,10 +4112,7 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   let handled = false;
   if(canShareFile){
     try{
-      await navigator.share({
-        files: [csvFile],
-        text: buildWhatsAppMessage(payload, {includeCsv:false})
-      });
+      await navigator.share({ files: [csvFile] });
       handled = true;
     } catch(err){
       if(err && err.name === 'AbortError'){
