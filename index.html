@@ -70,6 +70,11 @@
     height:34px; width:auto; display:inline-block; margin-right:8px;
   }
   .topbar .brand-word{ font-weight:800; font-size:20px; letter-spacing:.2px; color:#fff; }
+  /* Small tracked "BY MYFITNESS" tag under the FitFlow wordmark — this is
+     purely the topbar's visual lockup (see brand-word above); the app's
+     name everywhere else (tab title, WhatsApp message, email subject,
+     manifest) deliberately stays MyFitness, unchanged. */
+  .topbar .brand-byline{ font-size:10px; font-weight:700; letter-spacing:1.5px; opacity:.85; margin-top:1px; }
   .topbar .subbrand{ font-size:11.5px; opacity:.9; margin-top:2px; }
 
   /* Shared round topbar-icon look for the Order History/Order Summary/
@@ -847,7 +852,8 @@
 
   <div class="topbar">
     <div class="topbar-center">
-      <div class="brand" role="img" aria-label="MyFitness"><img src="icon-512.png" alt="" class="brand-logo"><span class="brand-word" aria-hidden="true">MyFitness</span></div>
+      <div class="brand" role="img" aria-label="FitFlow, by MyFitness"><img src="icon-512.png" alt="" class="brand-logo"><span class="brand-word" aria-hidden="true">FitFlow</span></div>
+      <div class="brand-byline">BY MYFITNESS</div>
       <div class="subbrand">Order Booking App</div>
     </div>
     <div class="hdr-actions">
