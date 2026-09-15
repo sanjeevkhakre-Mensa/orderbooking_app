@@ -4117,13 +4117,19 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   if(els.inventoryOverlay && !els.inventoryOverlay.classList.contains('hidden')) renderInventoryTable();
   if(els.comboResults && !els.comboResults.hidden) renderComboResults();
 
-  // Step B: save to the Order History Google Sheet (the "transaction
-  // table" — see the Apps Script setup guide). This never blocks the
-  // WhatsApp send below — a rep in the field with no signal should still
-  // be able to get their order out — but its outcome is reflected in the
-  // final success message.
-  let sheetOk = true;
-  try{ await postToSheet(payload); } catch(err){ sheetOk = false; console.error('Sheet sync failed', err); }
+  // Step B: sync to the Order History Google Sheet. Fired here WITHOUT
+  // awaiting it yet — calling postToSheet() still starts the fetch()
+  // immediately (synchronous up to its own first await), so the request
+  // is already in flight before Step C's WhatsApp handoff can background
+  // or kill the tab. Actually awaited further down, AFTER Step C, so it
+  // runs concurrently with the share/WhatsApp handoff rather than
+  // blocking it — never blocks the WhatsApp send (a rep with no signal
+  // still gets their order out), its outcome just feeds the final success
+  // message.
+  const sheetSyncPromise = postToSheet(payload).catch(err => {
+    console.error('Sheet sync failed', err);
+    return { __failed: true };
+  });
 
   // Step C: push the real CSV file itself via the OS share sheet
   // (navigator.share with `files`) — the rep picks WhatsApp and the actual
@@ -4131,6 +4137,21 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   // alongside the file, on purpose: that combination is what made some
   // WhatsApp/Android versions drop out of the share-sheet entirely in
   // earlier testing.
+  //
+  // Deliberately called with NO await in front of it (see Step B above) —
+  // navigator.share() requires "transient user activation" (must still be
+  // reasonably close to the tap that triggered this handler). Awaiting a
+  // network request first can burn through that window entirely,
+  // especially on a weak connection — Chrome then silently rejects the
+  // share() call with a non-AbortError, which used to fall through to the
+  // old text-link fallback with NO indication anything went wrong
+  // (confirmed by testing: same working phone, slower network, suddenly
+  // back to the wa.me text page instead of the file share). Running the
+  // sheet sync concurrently rather than sequentially — either before or
+  // after — is what avoids that without reopening the original reason
+  // Step B used to run first (an Android tab backgrounded/killed by the
+  // WhatsApp handoff could otherwise kill the sheet sync before it ever
+  // started).
   //
   // Falls back to CSV download + a SHORT WhatsApp text (no embedded CSV
   // block — that was the wall-of-text the rep is meant to stop seeing)
@@ -4173,6 +4194,9 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
       : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
     window.open(waUrl, '_blank');
   }
+
+  const sheetResult = await sheetSyncPromise;
+  const sheetOk = !(sheetResult && sheetResult.__failed);
 
   btn.textContent = original; btn.disabled = false;
   state.isSubmitting = false;
