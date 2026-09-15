@@ -4111,9 +4111,18 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   // of it (AbortError), that's a deliberate choice not to send right now:
   // we still save the CSV to their device as a safety net, but we do NOT
   // silently open WhatsApp's text-only flow behind their back.
+  // MIME type is deliberately generic (application/octet-stream), not
+  // text/csv — very few apps register their Android share-target intent
+  // filter for the exact text/csv type, so a strict text/csv File made the
+  // OS share sheet come up almost empty for EVERY app, not just WhatsApp
+  // (confirmed by testing: the sheet itself looked broken, not just
+  // missing WhatsApp specifically). application/octet-stream is the
+  // generic "any file" type that WhatsApp, Drive, Gmail, Files etc. all
+  // register for — the .csv extension in the filename is what still makes
+  // it open correctly as a spreadsheet once saved/opened on the other end.
   const csvBlob = buildCsvBlob(payload);
   const fileName = orderFileName(payload);
-  const csvFile = new File([csvBlob], fileName, {type:'text/csv'});
+  const csvFile = new File([csvBlob], fileName, {type:'application/octet-stream'});
   const canShareFile = !!(navigator.canShare && navigator.canShare({files:[csvFile]}));
 
   let handled = false;
