@@ -1734,7 +1734,7 @@ function rowsToCustomers(rows){
   const channelsSeen = {};
   const regionChannelsSeen = {};
   const lockExempt = {};
-  const codes = {};
+  const codesSeen = {};
   const labels = rows.map(r=>{
     const name = pickCol(r, ['Name','Customer Name','Customer','Buyer','Buyer Name']);
     if(!name) return null;
@@ -1755,9 +1755,18 @@ function rowsToCustomers(rows){
     // Buyer Id — the join key into Margin_Master's buyer_code column (see
     // marginFromMasterFor). Kept alongside BUYER_CHANNELS/BUYER_CODES
     // rather than folded into the label itself since the label is meant to
-    // stay a clean, human-readable "Name-City" string.
+    // stay a clean, human-readable "Name-City" string. Collected into a Set
+    // per label first (same pattern as channelsSeen above) rather than
+    // overwritten row-by-row — a customer listed twice with two DIFFERENT
+    // Buyer Ids on file (a real data-entry mistake, not something this app
+    // should silently arbitrate) must never resolve to "whichever row
+    // happened to load last": that would misprice every SKU for this buyer
+    // against a possibly-wrong Margin_Master identity with zero warning.
     const buyerId = pickCol(r, ['Buyer Id','Buyer Code','buyer_code']);
-    if(buyerId) codes[label] = buyerId;
+    if(buyerId){
+      if(!codesSeen[label]) codesSeen[label] = new Set();
+      codesSeen[label].add(buyerId.trim());
+    }
     return label;
   }).filter(Boolean);
 
@@ -1776,6 +1785,22 @@ function rowsToCustomers(rows){
     // treats a missing entry as "show all locations" rather than guessing
     // between two conflicting channels for the same customer.
     if(set.size === 1) regionChannels[label] = [...set][0];
+  });
+  const codes = {};
+  Object.keys(codesSeen).forEach(label=>{
+    const set = codesSeen[label];
+    // Only keep it when every row for this label agrees on one Buyer Id —
+    // a genuine conflict leaves this label OUT of BUYER_CODES entirely, so
+    // marginFromMasterFor() sees it as 'missing' (the existing "⚠ Margin
+    // not configured" warning) rather than pricing against a coin-flip
+    // identity. This is a real data-integrity check, not just theoretical —
+    // see the console warning below, which is meant to actually get fixed
+    // in the Customer Master sheet, not just silently routed around.
+    if(set.size === 1){
+      codes[label] = [...set][0];
+    } else {
+      console.warn(`Customer Master: "${label}" has conflicting Buyer Ids on file (${[...set].join(', ')}) — margins for this buyer will show as unconfigured until the sheet is fixed.`);
+    }
   });
   BUYER_CHANNELS = channels;
   BUYER_CHANNEL_LOCK_EXEMPT = lockExempt;
@@ -1806,14 +1831,25 @@ function parseMarginPct(priceType){
 // other rowsToX function in this file follows that same shape, and
 // loadOneTab's caching/"no usable rows" check both specifically expect an
 // array back. applyMarginRows() below turns it into the lookup map.
+// Shared by rowsToMargins (build side) and marginFromMasterFor (lookup
+// side) so the two can never drift apart into two different normalization
+// rules. Trims AND uppercases both halves — a Buyer Id or Style Code that's
+// otherwise identical but for stray whitespace or casing (copy-paste from
+// Excel is exactly where that creeps in) must still match, rather than
+// silently missing and falling back to the generic channel-wide margin
+// with no warning the rep would actually notice.
+function marginMasterKey(buyerCode, styleId){
+  return String(buyerCode).trim().toUpperCase() + '|' + String(styleId).trim().toUpperCase();
+}
+
 function rowsToMargins(rows){
-  const seen = {}; // "<buyerCode>|<styleId>" -> Set of distinct margin %s / 'SAMPLE'
+  const seen = {}; // marginMasterKey(...) -> Set of distinct margin %s / 'SAMPLE'
   rows.forEach(r=>{
     const buyerCode = pickCol(r, ['buyer_code','Buyer Code','Buyer Id']);
     const styleId = pickCol(r, ['style_id','Style Id','Style Code','Style']);
     const pct = parseMarginPct(pickCol(r, ['price_type','Price Type']));
     if(!buyerCode || !styleId || pct === null) return;
-    const key = buyerCode.trim() + '|' + styleId.trim();
+    const key = marginMasterKey(buyerCode, styleId);
     if(!seen[key]) seen[key] = new Set();
     seen[key].add(pct);
   });
@@ -1845,7 +1881,7 @@ function applyMarginRows(rows){
 // e.g.) — both simply resolve to 'missing' rather than throwing.
 function marginFromMasterFor(buyerCode, styleId){
   if(!buyerCode || !styleId) return { status: 'missing' };
-  const entry = PRODUCT_MARGINS[buyerCode.trim() + '|' + styleId.trim()];
+  const entry = PRODUCT_MARGINS[marginMasterKey(buyerCode, styleId)];
   if(entry === undefined) return { status: 'missing' };
   if(Array.isArray(entry)) return { status: 'duplicate', values: entry };
   if(entry === 'SAMPLE') return { status: 'sample' };
