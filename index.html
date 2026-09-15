@@ -4089,35 +4089,54 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   let sheetOk = true;
   try{ await postToSheet(payload); } catch(err){ sheetOk = false; console.error('Sheet sync failed', err); }
 
-  // Step C: open WhatsApp directly with the order details as the message
-  // text — no OS share-sheet/app-picker in between, so the very next thing
-  // the rep sees is WhatsApp itself, ready to pick who to send to and tap
-  // Send.
+  // Step C: push the real CSV file itself via the OS share sheet
+  // (navigator.share with `files`) — the rep picks WhatsApp and the actual
+  // .csv attaches to the chat, not a text dump of the same data. No `text`
+  // alongside the file, on purpose: that combination is what made some
+  // WhatsApp/Android versions drop out of the share-sheet entirely in
+  // earlier testing.
   //
-  // A native-share-with-file version of this (navigator.share with the
-  // real .csv attached) was tried and reverted — it depends on the exact
-  // Android version / WhatsApp version / phone OEM skin's share-target
-  // registration, which turned out too inconsistent in practice: it
-  // worked on one test, then failed two different ways (empty share
-  // sheet, then canShare() silently returning false) on later tests,
-  // with no way to reproduce or debug the real device from here. This
-  // direct-link approach traded that off deliberately for reliability —
-  // it's the one flow that has tested consistently every time.
-  //
-  // The order CSV can't be attached as a real file this way (wa.me only
-  // ever pre-fills text) — it's downloaded to the device instead, and
-  // every detail is also already embedded as text inside the WhatsApp
-  // message itself (buildWhatsAppMessage — see its own comment), so
-  // nothing is missing from the chat even without the file attached.
-  const message = buildWhatsAppMessage(payload);
+  // Falls back to CSV download + a SHORT WhatsApp text (no embedded CSV
+  // block — that was the wall-of-text the rep is meant to stop seeing)
+  // only when the browser can't share files at all, so there's still some
+  // way to reach WhatsApp on an unsupported device. If the rep opens the
+  // share sheet and backs out (AbortError), that's a deliberate choice not
+  // to send — we still leave the CSV downloaded as a safety net, but don't
+  // silently fall through to opening WhatsApp behind their back.
   const csvBlob = buildCsvBlob(payload);
   const fileName = orderFileName(payload);
+  const csvFile = new File([csvBlob], fileName, {type:'text/csv'});
+  const canShareFile = !!(navigator.canShare && navigator.canShare({files:[csvFile]}));
+  // Still built either way — used for the fallback WhatsApp text below AND
+  // for the "send yourself a copy" banner regardless of which path this
+  // order took, so that feature keeps working even on a successful direct
+  // file share. {includeCsv:false} drops the CSV-as-text block specifically
+  // — that block, not the message as a whole, was the "wall of text" the
+  // rep wanted gone now that the real file can be pushed directly.
+  const message = buildWhatsAppMessage(payload, {includeCsv:false});
 
-  downloadBlob(csvBlob, fileName);
-  const waUrl = WHATSAPP_NUMBER
-    ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
-    : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-  window.open(waUrl, '_blank');
+  let sharedFileDirectly = false;
+  let shareCancelled = false;
+  if(canShareFile){
+    try{
+      await navigator.share({ files: [csvFile] });
+      sharedFileDirectly = true;
+    } catch(err){
+      if(err && err.name === 'AbortError'){
+        shareCancelled = true;
+        downloadBlob(csvBlob, fileName);
+      }
+      // any other error falls through to the text-link fallback below
+    }
+  }
+
+  if(!sharedFileDirectly && !shareCancelled){
+    downloadBlob(csvBlob, fileName);
+    const waUrl = WHATSAPP_NUMBER
+      ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank');
+  }
 
   btn.textContent = original; btn.disabled = false;
   state.isSubmitting = false;
@@ -4130,9 +4149,16 @@ document.getElementById('btnSubmitWA').addEventListener('click', async ()=>{
   const verb = isEditingThisOrder ? 'updated' : 'submitted';
   resetForm();
 
-  // Build the final status toast from what ACTUALLY happened (sheetOk)
-  // rather than always reporting plain success.
-  let statusMsg = `✅ Order ${submittedOrderNo} ${verb} successfully — CSV "${fileName}" was saved to your device (the order details are also in the WhatsApp message text). Attach the file in WhatsApp yourself if you want to send it too.`;
+  // Build the final status toast from what ACTUALLY happened (sheetOk AND
+  // which of the three CSV-delivery outcomes above actually occurred).
+  let statusMsg;
+  if(sharedFileDirectly){
+    statusMsg = `✅ Order ${submittedOrderNo} ${verb} successfully — CSV "${fileName}" sent via the share sheet.`;
+  } else if(shareCancelled){
+    statusMsg = `Order ${submittedOrderNo} ${verb} — CSV "${fileName}" saved to your device. Share was cancelled, so WhatsApp wasn't opened.`;
+  } else {
+    statusMsg = `✅ Order ${submittedOrderNo} ${verb} successfully — CSV "${fileName}" was saved to your device (order details are also in the WhatsApp message text).`;
+  }
   if(!sheetOk){
     statusMsg += ' (sheet sync failed, but WhatsApp/CSV still went out)';
   }
