@@ -3796,7 +3796,8 @@ function buildCsvRows(payload){
   const headers = [
     'Scan Identifier', 'Ordered Qty', 'Price Type', 'Price', 'PO Qty',
     'Order No', 'Order Date', 'Customer Name', 'Sales Channel', 'Style / SKU Code', 'MRP',
-    'Unit Price (Excl. GST)', 'GST Amount', 'Line Item Total', 'Warehouse Name', 'Available Inventory'
+    'Unit Price (Excl. GST)', 'GST Amount', 'Line Item Total', 'Warehouse Name',
+    'Bhiwandi Inventory', 'GGN Inventory', 'BLR Inventory'
   ];
   const rows = [headers];
   const orderDate = payload.submittedAt ? formatHistoryDate(payload.submittedAt) : '';
@@ -3804,17 +3805,23 @@ function buildCsvRows(payload){
   // Same warehouse scoping as everywhere else (search badges, Add-to-Order
   // panel, Inventory overlay) — see CHANNEL_WAREHOUSES/warehousesForCustomer.
   // One warehouse set per order (it only depends on the customer, not the
-  // line), but Available Inventory is still looked up per SKU since that
-  // does vary line to line.
+  // line), but the per-warehouse inventory columns are still looked up per
+  // SKU since that does vary line to line.
   const scopeWarehouses = warehousesForCustomer(payload.customerName);
   const warehouseName = scopeWarehouses ? scopeWarehouses.map(w=>WAREHOUSE_LABELS[w]).join(' + ') : 'All Locations';
 
   payload.lines.filter(l=>l.validation==='Accepted').forEach(l=>{
-    const available = scopedAvailableStock(l.style, payload.customerName);
+    // Raw per-warehouse stock, same convention as the Inventory overlay
+    // table (fmtNum(inv[w]) per warehouse column) — not booked-adjusted,
+    // since Booked Qty is only ever tracked in aggregate (see
+    // scopedAvailableStock), not per warehouse, so splitting that part out
+    // per-warehouse would be a fabricated number rather than a real one.
+    const inv = LIVE_INVENTORY[l.style];
     rows.push([
       formatScanIdentifier(l.ean), l.qty, l.priceType, l.exportPrice, l.qty,
       payload.orderNo || '', orderDate, payload.customerName || '', payload.salesChannel || '', l.style || '', l.mrp || '',
-      l.unitPrice, l.gstAmount, l.lineTotal, warehouseName, available === null ? '' : available
+      l.unitPrice, l.gstAmount, l.lineTotal, warehouseName,
+      inv ? inv.bhiwandi : '', inv ? inv.ggn : '', inv ? inv.blr : ''
     ]);
   });
 
