@@ -35,11 +35,13 @@ var CONFIG = {
   // "MyFitness_Master_Data" spreadsheet — used READ-ONLY to validate incoming
   // SKUs. Same spreadsheet ID already used in index.html's MASTER_DATA_URLS.
   MASTER_DATA_SPREADSHEET_ID: '1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0',
-  // gids taken directly from index.html's MASTER_DATA_URLS — looked up by
-  // sheet ID rather than tab name, so a tab rename in the Sheet UI can't
-  // silently break this.
-  PRODUCT_GID_GT: 639235062,
-  PRODUCT_GID_SUPPLEMENT: 1572320868,
+  // Merged 2026-09-18: the separate GT (gid 639235062) and Supplement (gid
+  // 1572320868) tabs this used to read by gid are now one "Product_Master"
+  // tab (see index.html's MASTER_DATA_URLS.products / rowsToProductMaster).
+  // Looked up by name here — the new tab's gid isn't fixed/known the way
+  // the old ones were — so keep this name in sync with the actual tab name
+  // if it's ever renamed in the Sheet UI.
+  PRODUCT_MASTER_SHEET_NAME: 'Product_Master',
 
   // This script runs under sanjeev.khakre@mensabrands.com (see header
   // comment for why), who is directly on tech@mensabrands.com's automated
@@ -332,21 +334,22 @@ function normalizeInventoryRows(rows){
   return out;
 }
 
-// Reads Product Master GT + Supplement tabs (by gid, matching
-// MASTER_DATA_URLS in index.html) purely to validate/describe incoming
-// SKUs. Read-only — never written back to.
+// Reads the merged Product_Master tab (by name, matching
+// MASTER_DATA_URLS.products in index.html) purely to validate/describe
+// incoming SKUs. Read-only — never written back to. The tab has both GT and
+// Supplement rows (a Channel column distinguishes them, including the style
+// codes intentionally listed under both), but this lookup only needs
+// style -> description, so it doesn't need to care which channel a row is.
 function readProductMasterStyleCodes(){
   var ss = SpreadsheetApp.openById(CONFIG.MASTER_DATA_SPREADSHEET_ID);
   var map = {};
-  [CONFIG.PRODUCT_GID_GT, CONFIG.PRODUCT_GID_SUPPLEMENT].forEach(function(gid){
-    var sheet = ss.getSheets().find(function(s){ return s.getSheetId() === gid; });
-    if(!sheet) return;
-    var objs = valuesToObjects(sheet.getDataRange().getValues());
-    objs.forEach(function(r){
-      var style = String(pickCol(r, ['Style', 'Style Code', 'SKU'])).trim();
-      if(!style) return;
-      map[style] = { desc: String(pickCol(r, ['Description', 'Product Description', 'Desc'])).trim() };
-    });
+  var sheet = ss.getSheetByName(CONFIG.PRODUCT_MASTER_SHEET_NAME);
+  if(!sheet) return map;
+  var objs = valuesToObjects(sheet.getDataRange().getValues());
+  objs.forEach(function(r){
+    var style = String(pickCol(r, ['Style', 'Style Code', 'SKU'])).trim();
+    if(!style) return;
+    map[style] = { desc: String(pickCol(r, ['Description', 'Product Description', 'Desc'])).trim() };
   });
   return map;
 }

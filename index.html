@@ -1179,8 +1179,16 @@ const INVENTORY_DATE = "07-Aug-2026";
 // filled in.
 const MASTER_DATA_URLS = {
   customers: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=226489656",           // Customer Master tab
-  productsGT: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=639235062",          // Product Master — General Trade tab
-  productsSupplement: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/export?format=csv&gid=1572320868", // Product Master — Supplement tab
+  // Merged 2026-09-18: General Trade and Supplement used to be two separate
+  // tabs (gid 639235062 / 1572320868). They're now one "Product_Master" tab
+  // with a Channel column ("General Trade" / "Supplement") added — see
+  // rowsToProductMaster(). Six style codes (e.g. DC5101, C201, ZC5102) are
+  // intentionally listed under BOTH channels with different wording/
+  // classification for the same EAN/MRP — that dual-listing is preserved
+  // as two separate rows, never deduped down to one. Referenced by sheet
+  // NAME via gviz (same pattern as margins below) rather than by gid, since
+  // it's a newly added tab.
+  products: "https://docs.google.com/spreadsheets/d/1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0/gviz/tq?tqx=out:csv&sheet=Product_Master",
   // Moved 2026-09-03 to a tab in the SAME MyFitness_Master_Data spreadsheet
   // as customers/products/margins above (was previously a separate
   // Live_Inventory_tab spreadsheet, id
@@ -1888,42 +1896,39 @@ function marginFromMasterFor(buyerCode, styleId){
   return { status: 'ok', pct: entry };
 }
 
-function rowsToProductsGT(rows){
-  return rows.map(r=>{
+// Unified Product_Master tab (merged 2026-09-18 from the former separate GT
+// and Supplement tabs) — one row per (Style Code, Channel) pair. Splits back
+// into the same two per-channel row shapes rowsToProductsGT/
+// rowsToProductsSupplement used to build directly, so PRODUCT_MASTERS and
+// everything downstream (search, pricing, margin lookup by style) is
+// unaffected by the merge. A row with no recognizable Channel value falls
+// back to General Trade, matching the old default when this tab only had
+// GT-shaped columns.
+function rowsToProductMaster(rows){
+  const gt = [], supplement = [];
+  rows.forEach(r=>{
     const style = pickCol(r, ['Style','Style Code','SKU']);
-    if(!style) return null;
-    const brandRaw = pickCol(r, ['Brand']).toUpperCase();
-    return {
+    if(!style) return;
+    const common = {
       style,
       desc: pickCol(r, ['Description','Product Description','Desc']),
       ean: pickCol(r, ['EAN','Scan Identifier','Barcode']),
       netwt: pickCol(r, ['Net Wt','NetWt','GM','Net Weight']),
       casepack: csvInt(pickCol(r, ['Case Pack','CasePack','UOM','Case-Pack']), 1),
       mrp: csvNum(pickCol(r, ['MRP']), 0),
-      brand: brandRaw.includes('PF') ? 'PF' : 'MF',
       stock: null
     };
-  }).filter(Boolean);
-}
-
-function rowsToProductsSupplement(rows){
-  return rows.map(r=>{
-    const style = pickCol(r, ['Style','Style Code','SKU']);
-    if(!style) return null;
-    const categoryRaw = pickCol(r, ['Category']).toUpperCase();
-    const category = categoryRaw.includes('NON') ? 'NON PB' : 'PB';
-    return {
-      style,
-      desc: pickCol(r, ['Description','Product Description','Desc']),
-      ean: pickCol(r, ['EAN','Scan Identifier','Barcode']),
-      netwt: pickCol(r, ['Net Wt','NetWt','GM','Net Weight']),
-      casepack: csvInt(pickCol(r, ['Case Pack','CasePack','UOM','Case-Pack']), 1),
-      mrp: csvNum(pickCol(r, ['MRP']), 0),
-      category,
-      marginGroup: category === 'NON PB' ? 'NONPB' : 'PB',
-      stock: null
-    };
-  }).filter(Boolean);
+    const channel = pickCol(r, ['Channel']).trim().toUpperCase();
+    if(channel === 'SUPPLEMENT'){
+      const categoryRaw = pickCol(r, ['Category']).toUpperCase();
+      const category = categoryRaw.includes('NON') ? 'NON PB' : 'PB';
+      supplement.push({ ...common, category, marginGroup: category === 'NON PB' ? 'NONPB' : 'PB' });
+    } else {
+      const brandRaw = pickCol(r, ['Brand']).toUpperCase();
+      gt.push({ ...common, brand: brandRaw.includes('PF') ? 'PF' : 'MF' });
+    }
+  });
+  return { gt, supplement };
 }
 
 // Live Inventory tab — one row per style code, refreshed daily by the Apps
@@ -2162,6 +2167,46 @@ async function loadOneTab(tab, url, rowMapper, applyFn, fallbackData){
   }
 }
 
+// Product_Master is one merged tab feeding TWO destinations (GT and
+// Supplement catalogs), unlike every other loadOneTab() call which is a
+// single tab -> single destination. Mirrors loadOneTab's fetch/cache/
+// fallback behavior exactly, just fetching once and applying the split
+// result (rowsToProductMaster) to both productsGT and productsSupplement's
+// status/cache/PRODUCT_MASTERS entries so the status bar and offline cache
+// behave identically to when these were two separate tabs.
+async function loadProductMasterTab(){
+  const statusGT = masterData.status.productsGT;
+  const statusSupp = masterData.status.productsSupplement;
+  const url = MASTER_DATA_URLS.products;
+  if(!url){
+    if(statusGT.source !== 'cache'){ statusGT.source = 'fallback'; statusGT.error = null; PRODUCT_MASTERS['General Trade'].skus = FALLBACK_SKUS_GT; }
+    if(statusSupp.source !== 'cache'){ statusSupp.source = 'fallback'; statusSupp.error = null; PRODUCT_MASTERS['Supplement'].skus = FALLBACK_SKUS_SUPPLEMENT; }
+    return;
+  }
+  try{
+    const csvText = await fetchCsv(url);
+    const parsed = rowsToProductMaster(csvToObjects(csvText));
+    if(parsed.gt.length === 0 && parsed.supplement.length === 0){
+      throw new Error('The sheet returned no usable rows — check the column headers against the setup guide.');
+    }
+    PRODUCT_MASTERS['General Trade'].skus = parsed.gt;
+    PRODUCT_MASTERS['Supplement'].skus = parsed.supplement;
+    const now = Date.now();
+    statusGT.source = 'sheet'; statusGT.error = null; statusGT.updatedAt = now;
+    statusSupp.source = 'sheet'; statusSupp.error = null; statusSupp.updatedAt = now;
+    saveMasterCache('productsGT', parsed.gt);
+    saveMasterCache('productsSupplement', parsed.supplement);
+  } catch(err){
+    console.error('Master data fetch failed for "products":', err);
+    const cachedGT = loadMasterCache('productsGT');
+    if(cachedGT){ PRODUCT_MASTERS['General Trade'].skus = cachedGT.data; statusGT.source = 'cache'; statusGT.error = err.message; statusGT.updatedAt = cachedGT.savedAt; }
+    else { PRODUCT_MASTERS['General Trade'].skus = FALLBACK_SKUS_GT; statusGT.source = 'fallback'; statusGT.error = err.message; }
+    const cachedSupp = loadMasterCache('productsSupplement');
+    if(cachedSupp){ PRODUCT_MASTERS['Supplement'].skus = cachedSupp.data; statusSupp.source = 'cache'; statusSupp.error = err.message; statusSupp.updatedAt = cachedSupp.savedAt; }
+    else { PRODUCT_MASTERS['Supplement'].skus = FALLBACK_SKUS_SUPPLEMENT; statusSupp.source = 'fallback'; statusSupp.error = err.message; }
+  }
+}
+
 async function loadMasterData(opts){
   const force = !!(opts && opts.force);
   // Nothing to fetch at all — don't flash a "Refreshing…" status for a
@@ -2180,10 +2225,7 @@ async function loadMasterData(opts){
   await Promise.all([
     loadOneTab('customers', MASTER_DATA_URLS.customers, rowsToCustomers,
       data => { BUYERS = data; }, FALLBACK_BUYERS),
-    loadOneTab('productsGT', MASTER_DATA_URLS.productsGT, rowsToProductsGT,
-      data => { PRODUCT_MASTERS['General Trade'].skus = data; }, FALLBACK_SKUS_GT),
-    loadOneTab('productsSupplement', MASTER_DATA_URLS.productsSupplement, rowsToProductsSupplement,
-      data => { PRODUCT_MASTERS['Supplement'].skus = data; }, FALLBACK_SKUS_SUPPLEMENT),
+    loadProductMasterTab(),
     // Margin_Master doesn't depend on the Product Master being loaded
     // first (it's matched by style_id string, not a live SKU lookup), so
     // this runs alongside the three tabs above rather than needing the

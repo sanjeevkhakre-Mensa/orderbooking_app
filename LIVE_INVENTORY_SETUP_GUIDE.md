@@ -52,9 +52,11 @@ sheet.
 1. In that spreadsheet: **Extensions → Apps Script**.
 2. Delete the default `Code.gs` boilerplate and paste in the contents of
    [`apps-script/InventorySync.gs`](apps-script/InventorySync.gs) from this repo.
-3. Confirm the two `PRODUCT_GID_*` values in `CONFIG` match the gids already
-   used in `index.html`'s `MASTER_DATA_URLS.productsGT` / `.productsSupplement`
-   (they should — both files were written against the same sheet).
+3. Confirm `CONFIG.PRODUCT_MASTER_SHEET_NAME` matches the tab name used in
+   `index.html`'s `MASTER_DATA_URLS.products` (both are `Product_Master` by
+   default — the merged tab that replaced the old separate GT/Supplement
+   tabs; they should already match since both files were written against
+   the same sheet).
 4. Enable the **Drive API Advanced Service** (needed to convert the `.xlsx`
    attachment): in the Apps Script editor, click **Services (+)** → find
    **Drive API** → **Add**.
