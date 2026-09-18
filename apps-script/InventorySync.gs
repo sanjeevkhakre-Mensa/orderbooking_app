@@ -36,12 +36,12 @@ var CONFIG = {
   // SKUs. Same spreadsheet ID already used in index.html's MASTER_DATA_URLS.
   MASTER_DATA_SPREADSHEET_ID: '1IguT54kTk5z0HLWQO8FL0vgg12QIS6Domk0xRR-5QZ0',
   // Merged 2026-09-18: the separate GT (gid 639235062) and Supplement (gid
-  // 1572320868) tabs this used to read by gid are now one "Product_Master"
+  // 1572320868) tabs this used to read by gid are now one "Product Master"
   // tab (see index.html's MASTER_DATA_URLS.products / rowsToProductMaster).
   // Looked up by name here — the new tab's gid isn't fixed/known the way
   // the old ones were — so keep this name in sync with the actual tab name
   // if it's ever renamed in the Sheet UI.
-  PRODUCT_MASTER_SHEET_NAME: 'Product_Master',
+  PRODUCT_MASTER_SHEET_NAME: 'Product Master',
 
   // This script runs under sanjeev.khakre@mensabrands.com (see header
   // comment for why), who is directly on tech@mensabrands.com's automated
