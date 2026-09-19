@@ -107,10 +107,39 @@ function listSheetGids(){
   SpreadsheetApp.getUi().alert('Tab GIDs', lines.join('\n'), SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
+// Shared-secret check — see isAuthorized() below for the full reasoning.
+// SETUP: Project Settings > Script Properties > add SHARED_SECRET with a
+// random value of your choosing, then put that SAME value in index.html's
+// WEBAPP_SHARED_SECRET constant.
+function isAuthorized(e){
+  var expected = PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
+  if(!expected) return false; // fail closed — not configured yet means not authorized, not "allow everything"
+  var provided = '';
+  try{
+    if(e && e.postData && e.postData.contents){
+      provided = String(JSON.parse(e.postData.contents).secret || '');
+    }
+  } catch(err){ /* not JSON — fall through to query param below */ }
+  if(!provided && e && e.parameter) provided = String(e.parameter.secret || '');
+  return provided === expected;
+}
+
 // Web App entry point — called by index.html's "Sync Inventory Now" button.
 // Deployed separately from the existing order-logging Web App on purpose,
 // so this script's deployment/authorization never touches that one.
+//
+// This project is typically deployed "Who has access: Anyone" so the app's
+// browser fetch() can reach it without a Google sign-in prompt — which
+// means, with no check at all, literally anyone on the internet who finds
+// this URL could trigger a real Gmail read + Sheet write on demand. The
+// isAuthorized() check below closes that off for anyone without the shared
+// secret; see WEBAPP_SHARED_SECRET in index.html for what it does and does
+// not protect against.
 function doPost(e){
+  if(!isAuthorized(e)){
+    return ContentService.createTextOutput(JSON.stringify({ status: 'Failed', error: 'Unauthorized' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   var result = syncInventoryFromGmail();
   return ContentService.createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);

@@ -64,10 +64,23 @@ var GEMINI_PROMPT =
 // ============================================================================
 // ENTRY POINT
 // ============================================================================
+// Shared-secret check — without it, anyone with this URL can spend your
+// Gemini API quota/budget on demand (the key above is billed to your
+// account regardless of who calls this endpoint).
+// SETUP: Project Settings > Script Properties > add SHARED_SECRET with a
+// random value of your choosing, then put that SAME value in index.html's
+// WEBAPP_SHARED_SECRET constant.
+function isAuthorized(body){
+  var expected = PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
+  if(!expected) return false; // fail closed — not configured yet means not authorized, not "allow everything"
+  return String((body && body.secret) || '') === expected;
+}
+
 function doPost(e){
   var result = { items: [], error: '' };
   try{
     var body = JSON.parse(e.postData.contents);
+    if(!isAuthorized(body)) throw new Error('Unauthorized');
     if(!body.imageBase64) throw new Error('No image received');
 
     var items = scanOrderPhoto(body.imageBase64, body.mimeType || 'image/jpeg');

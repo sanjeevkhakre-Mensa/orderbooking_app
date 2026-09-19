@@ -66,7 +66,33 @@ function doGet(e){
   return handleSearch(e);
 }
 
+// Shared-secret check. This matters MORE here than on the other Web Apps in
+// this project: every matched result below makes that invoice PDF openable
+// by anyone with its link, permanently, as a side effect of the search
+// itself (see makeViewableWithLink) — so an unauthenticated caller here
+// doesn't just read data, it can make real customer invoices public. Checked
+// before readQuery() runs at all, so an unauthorized request never reaches
+// the Order History sheet or the Drive folder.
+// SETUP: Project Settings > Script Properties > add SHARED_SECRET with a
+// random value of your choosing, then put that SAME value in index.html's
+// WEBAPP_SHARED_SECRET constant.
+function isAuthorized(e){
+  var expected = PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
+  if(!expected) return false; // fail closed — not configured yet means not authorized, not "allow everything"
+  var provided = '';
+  try{
+    if(e && e.postData && e.postData.contents){
+      provided = String(JSON.parse(e.postData.contents).secret || '');
+    }
+  } catch(err){ /* not JSON — fall through to query param below */ }
+  if(!provided && e && e.parameter) provided = String(e.parameter.secret || '');
+  return provided === expected;
+}
+
 function handleSearch(e){
+  if(!isAuthorized(e)){
+    return jsonOut({ error: 'Unauthorized', results: [] });
+  }
   var query = readQuery(e);
   if(!query){
     return jsonOut({ error: 'No search text given', query: query, results: [] });

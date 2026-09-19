@@ -1154,6 +1154,26 @@
 // Paste the deployed .../exec URL below once you have it.
 const SHEET_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzWs3joVroP9zQks30dFoO_IHr8Xs7oD8HICnClgt9Wy45MhijFDMG0u3HV1DB2a8jC/exec";
 
+// Shared secret sent with every request to the four Apps Script Web Apps
+// below (order logging, inventory sync, invoice search, image scan), so a
+// crawler/scanner that stumbles onto one of those public /exec URLs some
+// other way (a leaked link, a git history search, a support ticket) can't
+// call it cold. Each script checks this same value via its own
+// isAuthorized(e) — see the SETUP comment at the top of each .gs file for
+// where to set it (Script Properties, key SHARED_SECRET). Generate your own
+// random value (e.g. a UUID) and use the SAME one everywhere.
+//
+// IMPORTANT — read before relying on this: this file is served as plain
+// client-side JS, so this string is exactly as visible as the WEBAPP_URLs
+// themselves to anyone who opens the app and reads its source or network
+// requests. It stops opportunistic/automated abuse of a leaked URL, NOT a
+// motivated attacker who actually loads this app. The real fix for that is
+// each Web App's own deployment setting — "Who has access" — set to
+// "Anyone within mensabrands.com" (or your own Workspace domain) instead of
+// "Anyone", which Google enforces with real sign-in, not a string in this
+// file. Do both; this secret is defense-in-depth, not a substitute.
+const WEBAPP_SHARED_SECRET = "REPLACE_WITH_YOUR_OWN_SECRET";
+
 // Order Processing team's WhatsApp number, digits only with country code,
 // e.g. "919876543210" for +91 98765 43210. Leave blank to let the sales rep
 // pick the contact/group themselves from their own WhatsApp on each send.
@@ -2529,7 +2549,7 @@ if(els.btnSyncInventoryNow){
     const original = els.btnSyncInventoryNow.textContent;
     els.btnSyncInventoryNow.textContent = 'Syncing…';
     try{
-      const res = await fetch(INVENTORY_SYNC_WEBAPP_URL, { method:'POST', body: JSON.stringify({action:'syncInventoryNow'}) });
+      const res = await fetch(INVENTORY_SYNC_WEBAPP_URL, { method:'POST', body: JSON.stringify({action:'syncInventoryNow', secret: WEBAPP_SHARED_SECRET}) });
       const result = await res.json().catch(()=>({}));
       if(result.status === 'Failed'){
         toast(`Sync failed: ${result.error || 'unknown error'}`);
@@ -2639,7 +2659,7 @@ async function runInvoiceSearch(){
   renderInvoiceSearchResult(`<div class="history-empty">Searching…</div>`);
 
   try{
-    const res = await fetch(INVOICE_SEARCH_WEBAPP_URL, { method:'POST', body: JSON.stringify({ query }) });
+    const res = await fetch(INVOICE_SEARCH_WEBAPP_URL, { method:'POST', body: JSON.stringify({ query, secret: WEBAPP_SHARED_SECRET }) });
     const result = await res.json().catch(()=>({}));
 
     if(result.error){
@@ -3283,7 +3303,7 @@ async function handleImgScanFile(file){
     const base64 = await fileToBase64(file);
     const res = await fetch(IMAGE_SCAN_WEBAPP_URL, {
       method: 'POST',
-      body: JSON.stringify({ imageBase64: base64, mimeType: file.type || 'image/jpeg' })
+      body: JSON.stringify({ imageBase64: base64, mimeType: file.type || 'image/jpeg', secret: WEBAPP_SHARED_SECRET })
     });
     const data = await res.json();
     if(data.error) throw new Error(data.error);
@@ -4065,7 +4085,11 @@ function downloadBlob(blob, filename){
 
 async function postToSheet(payload){
   if(!SHEET_WEBAPP_URL) return {skipped:true};
-  const res = await fetch(SHEET_WEBAPP_URL, { method:'POST', body: JSON.stringify(payload) });
+  // secret added here, not in buildOrderPayload()'s return value, so it
+  // never leaks into the other consumers of that same object (the CSV
+  // export, the WhatsApp message text) — only this one network request
+  // needs it.
+  const res = await fetch(SHEET_WEBAPP_URL, { method:'POST', body: JSON.stringify({ ...payload, secret: WEBAPP_SHARED_SECRET }) });
   if(!res.ok) throw new Error('HTTP '+res.status);
   return res.json().catch(()=>({}));
 }
