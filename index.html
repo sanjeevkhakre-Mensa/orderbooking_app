@@ -167,6 +167,20 @@
   }
   .history-edit-link:hover{ background:#f5fbfe; }
 
+  /* ---------------- Margin conflict picker ----------------
+     One button per distinct margin Margin_Master has on file for this
+     Buyer + Product pair — see openMarginConflictPicker(). */
+  .margin-pick-hint{ font-size:12.5px; color:var(--muted); margin-bottom:12px; }
+  .margin-pick-list{ display:flex; flex-direction:column; gap:8px; }
+  .margin-pick-btn{
+    border:1.5px solid var(--border); background:#fff; border-radius:10px;
+    padding:12px 14px; font-size:14px; font-weight:700; color:var(--ink);
+    cursor:pointer; text-align:left; display:flex; justify-content:space-between; align-items:center;
+    width:100%;
+  }
+  .margin-pick-btn:hover{ border-color:var(--blue); background:#f5fbfe; }
+  .margin-pick-btn .mp-price{ color:var(--muted); font-weight:600; font-size:12.5px; }
+
   /* Tabs at the top of the Orders/Summary body — a plain 2-way switch, kept
      visually distinct from both the wizard's step tabs and the Older/Newer
      pager so none of the three get confused for one another. */
@@ -949,6 +963,25 @@
     </div>
   </div>
 
+  <!-- Margin conflict picker: shown only when Margin_Master carries more
+       than one distinct margin for the current Buyer + Product pair (see
+       marginFromMasterFor status:'duplicate' / openMarginConflictPicker) —
+       lets the rep pick which margin applies instead of typing a Unit Price
+       by hand. Reuses the same history-overlay/history-sheet shell as the
+       other overlays above. -->
+  <div class="history-overlay hidden" id="marginPickOverlay">
+    <div class="history-sheet">
+      <div class="history-head">
+        <h3>Select Margin</h3>
+        <button type="button" class="history-close" id="marginPickClose" title="Close">✕</button>
+      </div>
+      <div class="history-body">
+        <div class="margin-pick-hint" id="marginPickHint"></div>
+        <div class="margin-pick-list" id="marginPickList"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- One unified, hard-to-miss install banner — replaces the old small
        topbar icon (Android) and separate iOS hint. Whichever platform
        fired (or a plain "not supported here" case), only one message
@@ -1480,6 +1513,7 @@ const els = {};
  'invUnmatchedToggle','invUnmatchedBody','btnSyncInventoryNow',
  'invoiceSearchAction','invoiceSearchBtn','invoiceSearchOverlay','invoiceSearchClose','invoiceSearchBody',
  'invoiceOrderNoInput','invoiceSearchGo','invoiceSearchResult',
+ 'marginPickOverlay','marginPickClose','marginPickHint','marginPickList',
  'marginGT','marginMF','marginPF','marginSupplement','marginPB','marginNONPB',
  'productSearch','comboResults','salesChannelHint',
  'imgScanRow','btnImgScan','imgScanFile','imgScanStatus','imgScanResults',
@@ -3473,6 +3507,37 @@ document.addEventListener('click', (e)=>{
   if(!e.target.closest('.combo')){ els.comboResults.hidden = true; els.buyerResults.hidden = true; }
 });
 
+// Margin Master conflict picker — shown only when marginFromMasterFor()
+// returns status:'duplicate' for the current Buyer + Product pair (more
+// than one distinct margin on file). Lets the rep pick which one applies
+// instead of typing a Unit Price by hand from the warning text alone;
+// values may include the sentinel 'SAMPLE' alongside real percentages
+// (see rowsToMargins), handled the same way openAddPanel treats a clean
+// 'sample' result elsewhere. Dismissing without picking (✕ / tap outside)
+// leaves the panel exactly as it already renders for an unresolved margin
+// conflict — no different from before this picker existed.
+function openMarginConflictPicker(sku, values, onPick){
+  els.marginPickHint.textContent =
+    `Margin_Master has more than one margin on file for ${sku.style} with this buyer. Choose the correct one to apply it to this line.`;
+  els.marginPickList.innerHTML = values.map((v, i) => {
+    if(v === 'SAMPLE'){
+      return `<button type="button" class="margin-pick-btn" data-idx="${i}">🎁 Sample <span class="mp-price">₹1</span></button>`;
+    }
+    return `<button type="button" class="margin-pick-btn" data-idx="${i}">${v}% <span class="mp-price">₹${priceFromMarginPct(sku, v).toFixed(2)}</span></button>`;
+  }).join('');
+  els.marginPickList.querySelectorAll('.margin-pick-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const chosen = values[parseInt(btn.dataset.idx, 10)];
+      closeMarginConflictPicker();
+      onPick(chosen);
+    });
+  });
+  els.marginPickOverlay.classList.remove('hidden');
+}
+function closeMarginConflictPicker(){
+  els.marginPickOverlay.classList.add('hidden');
+}
+
 function openAddPanel(style){
   const s = findSkuByStyle(style);
   if(!s){ toast('That product is no longer in the current master data — try searching again.'); return; }
@@ -3497,7 +3562,7 @@ function openAddPanel(style){
   // never be silently reclassified as a free sample just because this
   // panel was reopened, same reasoning as discount/price preservation
   // elsewhere in this function.
-  const isSample = !existing && marginResult.status === 'sample';
+  let isSample = !existing && marginResult.status === 'sample';
 
   let marginInfoClass = 'ok', marginInfoText = '';
   if(marginResult.status === 'ok'){
@@ -3685,8 +3750,25 @@ function openAddPanel(style){
     renderCart();
     toast(existing? 'Line updated' : `${s.style} added to order`);
   });
+
+  // Only a brand-new line prompts — same "existing line's own price wins"
+  // reasoning as isSample/defaultPrice above, so reopening an existing line
+  // never re-prompts and never disturbs its already-set price.
+  if(!existing && marginResult.status === 'duplicate'){
+    openMarginConflictPicker(s, marginResult.values, (pct)=>{
+      isSample = pct === 'SAMPLE';
+      priceInput.value = isSample ? 1 : priceFromMarginPct(s, pct);
+      const chosenLabel = isSample ? '🎁 Sample — Unit Price ₹1 (selected)' : `✓ Margin: ${pct}% (selected)`;
+      document.getElementById('apPriceDisplay').className = 'ap-qty-display';
+      document.getElementById('apPriceDisplay').textContent = '₹' + priceInput.value;
+      const infoBox = document.getElementById('apMarginInfo');
+      infoBox.className = 'inv-check ok';
+      infoBox.innerHTML = `<div class="inv-row"><span>${chosenLabel}</span></div>`;
+      refresh();
+    });
+  }
 }
-function closeAddPanel(){ els.addPanel.hidden = true; els.addPanel.innerHTML=''; }
+function closeAddPanel(){ els.addPanel.hidden = true; els.addPanel.innerHTML=''; closeMarginConflictPicker(); }
 
 // ============================================================================
 // CART RENDERING
@@ -4854,6 +4936,11 @@ els.historyOverlay.addEventListener('click', (e)=>{
   // Tapping the dimmed backdrop (not the sheet itself) closes it, matching
   // the usual "tap outside to dismiss" behaviour of a bottom sheet.
   if(e.target === els.historyOverlay) closeHistoryOverlay();
+});
+
+els.marginPickClose.addEventListener('click', closeMarginConflictPicker);
+els.marginPickOverlay.addEventListener('click', (e)=>{
+  if(e.target === els.marginPickOverlay) closeMarginConflictPicker();
 });
 
 // init
