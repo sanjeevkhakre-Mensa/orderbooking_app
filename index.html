@@ -3187,8 +3187,14 @@ function bulkAddFromCombo(){
     // stock state shifted between rendering the row and tapping "Add
     // Products" — e.g. the same SKU already added via another row's qty
     // box a moment earlier in this same click.
+    //
+    // Already-in-cart is called out separately from a margin-lookup miss —
+    // both skip the row, but a rep needs a different next step for each:
+    // "edit it below" vs. "check Margin Master" — a single generic
+    // "couldn't add" for both left no way to tell which happened.
+    if(state.cart.find(c=>c.style===s.style)){ skipped.push(`${s.style} (already in order — edit its qty below)`); return; }
     const marginResult = marginFromMasterFor(buyerCode, s.style);
-    if(marginResult.status !== 'ok' || state.cart.find(c=>c.style===s.style)){ skipped.push(s.style); return; }
+    if(marginResult.status !== 'ok'){ skipped.push(s.style); return; }
     const qty = Math.round(boxes * s.casepack);
     const available = scopedAvailableStock(s.style, els.customerName.value);
     if(available !== null && qty > available){ skipped.push(`${s.style} (only ${available} available)`); return; }
@@ -3242,7 +3248,7 @@ els.comboResults.addEventListener('click', (e)=>{
   if(e.target.closest('.combo-qty-wrap') || e.target.closest('.combo-add-all-bar')) return;
   const item = e.target.closest('.combo-item');
   if(!item) return;
-  openAddPanel(item.dataset.style);
+  openAddPanel(item.dataset.style, { confirmIfExisting: true });
 });
 
 // Enter in a qty box submits the whole batch, same as tapping "Add
@@ -3538,10 +3544,22 @@ function closeMarginConflictPicker(){
   els.marginPickOverlay.classList.add('hidden');
 }
 
-function openAddPanel(style){
+// opts.confirmIfExisting: when true and this SKU is already in the cart,
+// asks before opening the panel rather than silently reopening it pre-filled
+// with the existing line's qty/price — a rep tapping a search result they
+// forgot they'd already added shouldn't have that line's qty silently
+// overwritten without being told. Only the search-result row click passes
+// this; the cart's own pencil/edit icon is already an explicit "edit this
+// line" action and skips the prompt (see call sites below).
+function openAddPanel(style, opts){
+  opts = opts || {};
   const s = findSkuByStyle(style);
   if(!s){ toast('That product is no longer in the current master data — try searching again.'); return; }
   const existing = state.cart.find(c=>c.style===s.style);
+  if(existing && opts.confirmIfExisting){
+    const ok = confirm(`${s.style} is already in this order (qty: ${existing.qty} pcs). Update its quantity instead?`);
+    if(!ok) return;
+  }
   const defaultQty = existing ? existing.qty : s.casepack;
   const defaultDiscount = existing ? existing.discount : 0;
 
